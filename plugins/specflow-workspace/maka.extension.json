@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "id": "specflow.workspace",
+  "displayName": "SpecFlow Workspace Tools",
+  "description": "Scoped source-file tools for SpecFlow-owned workspaces; does not provide an OS sandbox.",
+  "configuration": { "properties": { "workspaceRoot": { "type": "string", "title": "Allowed workspace root" } }, "required": ["workspaceRoot"] },
+  "runtime": { "entry": "index.mjs" },
+  "composition": { "patch": "maka.composition.json" }
+}

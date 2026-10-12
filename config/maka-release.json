@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "packageName": "maka-agent",
+  "packageVersion": "0.2.0",
+  "registry": "https://registry.npmjs.org",
+  "channel": "official-release-only",
+  "status": "approved",
+  "distribution": "source",
+  "integrity": null,
+  "tarballUrl": null,
+  "releaseUrl": "https://maka.apache.org/en/downloads/",
+  "source": {
+    "releaseVersion": "0.2.0-incubating",
+    "url": "https://downloads.apache.org/incubator/maka/0.2.0-incubating/apache-maka-0.2.0-incubating-src.tar.gz",
+    "sha512": "baf7ae60f6e43d58dbeacd9df79275bc6bfa7d7683afc9cebe9c97f4b86e34a285c6fdea7218be77455d21a24f7769c65ff9756e5058eec998b121d6352b5199",
+    "signerFingerprint": "CCF8C3FDF7351B68084BFA1D975D5AA38DC0BCFA",
+    "keysUrl": "https://downloads.apache.org/incubator/maka/KEYS",
+    "npmVersion": "11.19.0"
+  },
+  "allowSourceBuild": true,
+  "checkedAt": "2026-10-12",
+  "reason": "暂时内置从签名正式源码构建的 Maka 0.2.0 Runtime Host，后续切换到正式 npm 依赖；始终禁止开发或预发布版本。"
+}

@@ -1,0 +1,13 @@
+node_modules/
+.tools/
+.specflow-data/
+dist/
+release/
+test-results/
+.vite/
+coverage/
+*.tsbuildinfo
+*.log
+.env
+.env.*
+!.env.example

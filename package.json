@@ -1,0 +1,57 @@
+{
+  "name": "specflow",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/desktop/main.cjs",
+  "description": "SpecFlow 本地软件工程流程工作台",
+  "author": "SpecFlow contributors",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "node scripts/toolchain.mjs dev",
+    "build": "node scripts/toolchain.mjs build",
+    "start": "node scripts/toolchain.mjs start",
+    "test": "node scripts/toolchain.mjs test",
+    "typecheck": "node scripts/toolchain.mjs typecheck",
+    "maka:setup": "node scripts/toolchain.mjs maka-setup",
+    "maka:probe": "node scripts/toolchain.mjs maka-probe",
+    "desktop:dev": "node scripts/toolchain.mjs desktop start",
+    "desktop:prepare": "node scripts/toolchain.mjs desktop prepare",
+    "desktop:package": "node scripts/toolchain.mjs desktop package",
+    "desktop:package:win": "node scripts/toolchain.mjs desktop package --win --x64",
+    "desktop:package:mac": "node scripts/toolchain.mjs desktop package --mac",
+    "desktop:package:mac:arm64": "node scripts/toolchain.mjs desktop package --mac --arm64",
+    "desktop:package:mac:x64": "node scripts/toolchain.mjs desktop package --mac --x64",
+    "desktop:smoke": "node scripts/toolchain.mjs desktop-smoke",
+    "desktop:smoke:packaged": "node scripts/toolchain.mjs desktop-smoke --packaged",
+    "desktop:smoke:requirements": "node scripts/toolchain.mjs requirements-smoke",
+    "desktop:smoke:clarify": "node scripts/toolchain.mjs clarify-smoke",
+    "desktop:smoke:clarify:packaged": "node scripts/toolchain.mjs clarify-smoke --packaged",
+    "desktop:smoke:workspaces": "node scripts/toolchain.mjs workspaces-smoke",
+    "desktop:smoke:workspaces:packaged": "node scripts/toolchain.mjs workspaces-smoke --packaged"
+  },
+  "dependencies": {
+    "@fastify/static": "^10.1.6",
+    "fastify": "^5.6.1",
+    "lucide-react": "^0.468.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "yaml": "^2.8.1",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.58.2",
+    "@types/node": "^24.10.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^5.1.0",
+    "electron": "44.7.0",
+    "electron-builder": "26.15.3",
+    "esbuild": "^0.25.12",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3",
+    "vite": "^7.2.0"
+  }
+}

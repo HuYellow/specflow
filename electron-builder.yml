@@ -1,0 +1,40 @@
+appId: dev.specflow.desktop
+productName: SpecFlow
+directories:
+  output: release
+  buildResources: build/desktop
+asar: true
+npmRebuild: false
+files:
+  - dist/desktop/**
+  - build/desktop/icon.png
+  - package.json
+  - '!node_modules/**'
+extraResources:
+  - from: .tools/desktop/resources
+    to: specflow
+  - from: .tools/desktop/runtime
+    to: runtime
+artifactName: SpecFlow-${version}-${os}-${arch}.${ext}
+win:
+  icon: build/desktop/icon.ico
+  target:
+    - target: nsis
+      arch: [x64]
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  deleteAppDataOnUninstall: false
+mac:
+  icon: build/desktop/icon.png
+  category: public.app-category.developer-tools
+  target: [dmg, zip]
+  hardenedRuntime: true
+  entitlements: build/desktop/entitlements.mac.plist
+  entitlementsInherit: build/desktop/entitlements.mac.plist
+  notarize: false
+dmg:
+  title: SpecFlow ${version}

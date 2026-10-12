@@ -1,0 +1,135 @@
+import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { dirname } from 'node:path';
+import { assert, hash, type InputBinding, type ArtifactRevision } from '../../../packages/domain/index.ts';
+import { safePath } from '../../../packages/verification-runner/index.ts';
+import { Store } from './store.ts';
+import { requirementFresh } from './requirements.ts';
+import { guidanceFresh } from './guidance.ts';
+
+export class Artifacts {
+  private locks = new Set<string>();
+  constructor(readonly store: Store) {}
+  create(workItemId: string, logicalId: string, content: string, inputs: InputBinding[] = [], originAttemptId?: string, expectedRevision?: number, provenance: Pick<Partial<ArtifactRevision>, 'supersedesRevisionId' | 'clarificationSessionId'> = {}) {
+    assert(/^[a-z][a-z0-9_-]{0,63}$/.test(logicalId), 'ARTIFACT_INVALID', '产物名称格式不合法');
+    const existing = this.store.list('artifacts', a => a.workItemId === workItemId && a.logicalId === logicalId)[0];
+    assert(!existing || !this.locks.has(existing.id), 'ARTIFACT_BUSY', '产物接纳正在执行');
+    if (expectedRevision !== undefined) assert(existing?.revision === expectedRevision, 'REVISION_CONFLICT', '产物已变化，请比较最新内容', existing);
+    return this.store.tx(() => {
+      const artifact = existing || this.store.create('artifacts', { workItemId, logicalId, type: logicalId, revisionIds: [], currentRevisionId: '', owner: 'local' });
+      const requirementRevisionId = originAttemptId ? this.store.get('attempts', originAttemptId).requirementRevisionId : this.store.get('workItems', workItemId).requirementRevisionId;
+      const item = this.store.get('workItems', workItemId);
+      const guidanceHash = originAttemptId ? this.store.get('attempts', originAttemptId).guidance?.contentHash : this.store.get('projects', item.projectId).guidance?.contentHash;
+      const revision = this.store.create('artifactRevisions', { artifactId: artifact.id, content, contentHash: hash(content), inputs, originAttemptId, requirementRevisionId, guidanceHash, ...provenance, acceptance: 'candidate', reviewed: false });
+      this.store.update('artifacts', artifact.id, { revisionIds: [...artifact.revisionIds, revision.id], currentRevisionId: revision.id }, artifact.revision);
+      if (logicalId === 'spec') for (const session of this.store.list('clarifications', s => s.workItemId === workItemId && s.state !== 'stale' && s.id !== provenance.clarificationSessionId)) {
+        this.store.update('clarifications', session.id, { state: 'stale' });
+        const node = this.store.get('nodes', session.nodeRunId), attempt = node.currentAttemptId ? this.store.get('attempts', node.currentAttemptId) : undefined;
+        if (node.execution === 'waiting_interaction' && attempt?.execution === 'completed') this.store.update('nodes', node.id, { execution: 'pending', gate: 'stale', freshness: 'stale', blockers: ['规格已更新，请重新澄清'] });
+      }
+      this.invalidate(workItemId, logicalId, revision.id);
+      return revision;
+    });
+  }
+  resolve(workItemId: string, reference: string): InputBinding {
+    const [logicalId, selection] = reference.split('@');
+    const artifact = this.store.list('artifacts', x => x.workItemId === workItemId && x.logicalId === logicalId)[0];
+    assert(artifact, 'INPUT_MISSING', `缺少 ${logicalId}`);
+    const revisionId = selection === 'accepted' ? artifact.acceptedRevisionId : artifact.currentRevisionId;
+    assert(revisionId, 'INPUT_NOT_ACCEPTED', `${logicalId} 尚未接纳`);
+    if (selection === 'accepted') assert(artifact.currentRevisionId === revisionId, 'INPUT_STALE', `${logicalId} 已编辑，当前版本尚未接纳`);
+    const revision = this.store.get('artifactRevisions', revisionId);
+    assert(this.revisionFresh(revision) && this.isFresh(revision.inputs), 'INPUT_STALE', `${logicalId} 依赖的需求、章程或上游版本已变化`);
+    if (selection === 'accepted') assert(!this.store.list('findings', f => f.targetHash === revision.contentHash && f.severity === 'blocker' && f.status === 'open').length, 'REVIEW_BLOCKED', `${logicalId} 有未解决的复核发现`);
+    return { logicalId, artifactRevisionId: revision.id, contentHash: revision.contentHash };
+  }
+  isFresh(inputs: InputBinding[], visited = new Set<string>()): boolean {
+    for (const binding of inputs) {
+      if (visited.has(binding.artifactRevisionId)) return false;
+      const revision = this.store.get('artifactRevisions', binding.artifactRevisionId);
+      const artifact = this.store.get('artifacts', revision.artifactId);
+      if (artifact.currentRevisionId !== revision.id || revision.contentHash !== binding.contentHash || !this.revisionFresh(revision)) return false;
+      const path = new Set(visited); path.add(revision.id);
+      if (!this.isFresh(revision.inputs, path)) return false;
+    }
+    return true;
+  }
+  private revisionFresh(revision: ArtifactRevision) {
+    const artifact = this.store.get('artifacts', revision.artifactId);
+    return requirementFresh(this.store, revision.requirementRevisionId) && guidanceFresh(this.store, artifact.workItemId, revision.guidanceHash);
+  }
+  private invalidate(workItemId: string, logicalId: string, currentRevisionId: string) {
+    const affected = new Set([logicalId]); let changed = true;
+    while (changed) {
+      changed = false;
+      for (const artifact of this.store.list('artifacts', x => x.workItemId === workItemId)) {
+        const revision = this.store.get('artifactRevisions', artifact.currentRevisionId);
+        if (revision.inputs.some(x => affected.has(x.logicalId) && x.artifactRevisionId !== currentRevisionId) && !affected.has(artifact.logicalId)) { affected.add(artifact.logicalId); changed = true; }
+      }
+    }
+    for (const run of this.store.list('runs', x => x.workItemId === workItemId)) for (const node of this.store.list('nodes', x => x.workflowRunId === run.id)) {
+      const def = run.definition.nodes.find(x => x.id === node.nodeId)!;
+      if (def.inputs.some(x => affected.has(x.split('@')[0])) && node.execution !== 'pending') this.store.update('nodes', node.id, { freshness: 'stale', gate: 'stale', blockers: ['上游产物已变更，请创建新尝试或重新检查'] });
+    }
+  }
+  async accept(artifactId: string, expectedRevision: number, actor: string, reason: string, requireReview = true) {
+    assert(!this.locks.has(artifactId), 'ARTIFACT_BUSY', '产物正在接纳');
+    this.locks.add(artifactId);
+    try {
+      const artifact = this.store.get('artifacts', artifactId);
+      assert(artifact.revision === expectedRevision, 'REVISION_CONFLICT', '产物版本已变化', artifact);
+      const revision = this.store.get('artifactRevisions', artifact.currentRevisionId);
+      assert(this.revisionFresh(revision) && this.isFresh(revision.inputs), 'INPUT_STALE', '产物依赖的需求、章程或上游已过期');
+      assert(revision.content.trim().length >= 20 && !/\[NEEDS CLARIFICATION\]|\bTODO\b/.test(revision.content), 'ARTIFACT_INCOMPLETE', '产物内容不足或仍有未决问题');
+      assert(!requireReview || revision.reviewed, 'REVIEW_REQUIRED', '当前版本需要独立复核后才能接纳');
+      const blockers = this.store.list('findings', f => f.targetHash === revision.contentHash && f.severity === 'blocker' && f.status === 'open');
+      assert(!blockers.length, 'REVIEW_BLOCKED', '当前版本仍有阻塞复核发现', blockers);
+      const item = this.store.get('workItems', artifact.workItemId);
+      const targetPath = await safePath(item.workspace, `.specflow/work-items/${item.id}/${artifact.logicalId}.md`);
+      await mkdir(dirname(targetPath), { recursive: true });
+      const prior = await readFile(targetPath, 'utf8').catch(() => null);
+      if (artifact.acceptedRevisionId) {
+        const accepted = this.store.get('artifactRevisions', artifact.acceptedRevisionId);
+        assert(prior !== null && hash(prior) === accepted.contentHash, 'REVISION_CONFLICT', '工作空间文档在应用外发生变更，请导入并比较后再接纳');
+      }
+      const op = this.store.create('fileOperations', { artifactId, revisionId: revision.id, targetPath, previousHash: prior === null ? null : hash(prior), nextHash: revision.contentHash, state: 'prepared', actor, reason });
+      const latest = await readFile(targetPath, 'utf8').catch(() => null);
+      assert(this.revisionFresh(revision) && this.isFresh(revision.inputs), 'INPUT_STALE', '接纳期间需求、章程或上游已变化');
+      assert((latest === null ? null : hash(latest)) === op.previousHash, 'REVISION_CONFLICT', '文档在写入前发生变化');
+      const temp = `${targetPath}.${op.id}.tmp`; await writeFile(temp, revision.content, 'utf8'); await rename(temp, targetPath);
+      this.store.update('fileOperations', op.id, { state: 'written' });
+      return this.commitOperation(op.id);
+    } finally { this.locks.delete(artifactId); }
+  }
+  private commitOperation(operationId: string) {
+    return this.store.tx(() => {
+      const op = this.store.get('fileOperations', operationId), artifact = this.store.get('artifacts', op.artifactId), revision = this.store.get('artifactRevisions', op.revisionId);
+      assert(artifact.currentRevisionId === op.revisionId, 'REVISION_CONFLICT', '接纳目标已变化');
+      assert(this.revisionFresh(revision) && this.isFresh(revision.inputs), 'INPUT_STALE', '接纳目标依赖的需求、章程或上游已过期');
+      this.store.update('artifactRevisions', revision.id, { acceptance: 'accepted' });
+      const updated = this.store.update('artifacts', artifact.id, { acceptedRevisionId: revision.id });
+      this.store.create('decisions', { workItemId: artifact.workItemId, targetId: revision.id, targetHash: revision.contentHash, actor: op.actor, kind: 'accept', reason: op.reason });
+      this.store.update('fileOperations', op.id, { state: 'committed' });
+      return updated;
+    });
+  }
+  async recover() {
+    for (const op of this.store.list('fileOperations', x => x.state === 'prepared' || x.state === 'written')) {
+      const content = await readFile(op.targetPath, 'utf8').catch(() => null);
+      if (content !== null && hash(content) === op.nextHash) {
+        try { this.commitOperation(op.id); } catch { this.store.update('fileOperations', op.id, { state: 'conflict' }); }
+      } else if (op.state === 'written' || (content === null ? null : hash(content)) !== op.previousHash) this.store.update('fileOperations', op.id, { state: 'conflict' });
+    }
+  }
+  async scanExternalChanges(workItemId: string) {
+    const item = this.store.get('workItems', workItemId);
+    for (const artifact of this.store.list('artifacts', x => x.workItemId === workItemId && !!x.acceptedRevisionId)) {
+      const accepted = this.store.get('artifactRevisions', artifact.acceptedRevisionId!);
+      const path = await safePath(item.workspace, `.specflow/work-items/${item.id}/${artifact.logicalId}.md`);
+      const content = await readFile(path, 'utf8').catch(() => null);
+      if (content === null || hash(content) !== accepted.contentHash) {
+        const current = this.store.get('artifactRevisions', artifact.currentRevisionId);
+        if (hash(content || '') !== current.contentHash) this.create(item.id, artifact.logicalId, content || '', [], undefined, artifact.revision);
+      }
+    }
+  }
+}

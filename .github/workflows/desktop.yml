@@ -1,0 +1,54 @@
+name: Desktop packages
+on:
+  workflow_dispatch:
+  push:
+    tags: ['desktop-v*']
+permissions:
+  contents: read
+jobs:
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: win
+            arch: x64
+            script: desktop:package:win
+          - os: macos-15
+            platform: mac
+            arch: arm64
+            script: desktop:package:mac:arm64
+          - os: macos-15-intel
+            platform: mac
+            arch: x64
+            script: desktop:package:mac:x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.19.0'
+          cache: npm
+      - run: npm ci
+      - name: Install release signature verifier on macOS
+        if: runner.os == 'macOS'
+        run: brew list gnupg || brew install gnupg
+      - name: Prepare approved Maka release runtime
+        run: node -e "const r=require('./config/maka-release.json'); if(r.status==='approved') require('child_process').execSync('npm run maka:setup',{stdio:'inherit'}); else console.log(r.reason)"
+      - run: npm test
+      - name: Build packages
+        run: npm run ${{ matrix.script }}
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: Smoke test packaged desktop
+        run: node scripts/toolchain.mjs desktop-smoke --packaged --${{ matrix.arch }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SpecFlow-${{ matrix.platform }}-${{ matrix.arch }}
+          path: |
+            release/*.exe
+            release/*.dmg
+            release/*.zip
+            release/desktop-smoke-*.json
+          if-no-files-found: error
