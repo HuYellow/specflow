@@ -1,4 +1,5 @@
 import { assert, hash, reviewSubjects, type Finding, type InputBinding, type WorkflowNode } from '../../../packages/domain/index.ts';
+import { humanBriefSchema } from '../../../packages/document-presentation/index.ts';
 import type { ReviewContext, ReviewSource } from '../../../packages/review-policy/index.ts';
 import type { Store } from './store.ts';
 
@@ -40,7 +41,13 @@ export function reviewEvidence(store: Store, candidateId: string, codeHash: stri
 }
 
 export function reviewArtifactSources(store: Store, inputs: InputBinding[]): ReviewSource[] {
-  return inputs.map(input => ({ id: `artifact:${input.artifactRevisionId}`, kind: 'artifact', content: store.get('artifactRevisions', input.artifactRevisionId).content }));
+  return inputs.flatMap(input => {
+    const revision = store.get('artifactRevisions', input.artifactRevisionId);
+    const sources: ReviewSource[] = [{ id: `artifact:${input.artifactRevisionId}`, kind: 'artifact', content: revision.content }];
+    const brief = revision.humanBriefSourceHash === revision.contentHash ? humanBriefSchema.safeParse(revision.humanBrief) : undefined;
+    if (brief?.success) sources.push({ id: `human-brief:${revision.id}`, kind: 'human_brief', content: JSON.stringify({ sourceContentHash: revision.contentHash, humanBrief: brief.data }) });
+    return sources;
+  });
 }
 
 export function reviewSubjectBindings(def: WorkflowNode, inputs: InputBinding[]) {

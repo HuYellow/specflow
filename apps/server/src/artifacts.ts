@@ -1,16 +1,24 @@
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
-import { assert, hash, type InputBinding, type ArtifactRevision } from '../../../packages/domain/index.ts';
+import { assert, hash, id, DomainError, type InputBinding, type ArtifactRevision } from '../../../packages/domain/index.ts';
 import { safePath } from '../../../packages/verification-runner/index.ts';
 import { Store } from './store.ts';
 import { requirementFresh } from './requirements.ts';
 import { guidanceFresh } from './guidance.ts';
 import { openReviewFindings } from './reviews.ts';
+import { createReading, humanBriefSchema, renderReadingHtml } from '../../../packages/document-presentation/index.ts';
 
 export class Artifacts {
   private locks = new Set<string>();
+  private integrationLocks = new Set<string>();
   constructor(readonly store: Store) {}
-  create(workItemId: string, logicalId: string, content: string, inputs: InputBinding[] = [], originAttemptId?: string, expectedRevision?: number, provenance: Pick<Partial<ArtifactRevision>, 'supersedesRevisionId' | 'clarificationSessionId' | 'candidateId' | 'codeHash'> = {}) {
+  lockWorkItem(workItemId: string) {
+    assert(!this.integrationLocks.has(workItemId) && !this.store.list('artifacts', artifact => artifact.workItemId === workItemId).some(artifact => this.locks.has(artifact.id)), 'ARTIFACT_BUSY', '文档正在接纳或集成，请稍后重试');
+    this.integrationLocks.add(workItemId);
+    return () => { this.integrationLocks.delete(workItemId); };
+  }
+  create(workItemId: string, logicalId: string, content: string, inputs: InputBinding[] = [], originAttemptId?: string, expectedRevision?: number, provenance: Pick<Partial<ArtifactRevision>, 'supersedesRevisionId' | 'clarificationSessionId' | 'candidateId' | 'codeHash' | 'humanBrief'> = {}) {
+    assert(!this.integrationLocks.has(workItemId), 'ARTIFACT_BUSY', '代码正在集成，请完成后再修订文档');
     assert(/^[a-z][a-z0-9_-]{0,63}$/.test(logicalId), 'ARTIFACT_INVALID', '产物名称格式不合法');
     const existing = this.store.list('artifacts', a => a.workItemId === workItemId && a.logicalId === logicalId)[0];
     assert(!existing || !this.locks.has(existing.id), 'ARTIFACT_BUSY', '产物接纳正在执行');
@@ -26,7 +34,8 @@ export class Artifacts {
       const requirementRevisionId = originAttemptId ? this.store.get('attempts', originAttemptId).requirementRevisionId : this.store.get('workItems', workItemId).requirementRevisionId;
       const item = this.store.get('workItems', workItemId);
       const guidanceHash = originAttemptId ? this.store.get('attempts', originAttemptId).guidance?.contentHash : this.store.get('projects', item.projectId).guidance?.contentHash;
-      const revision = this.store.create('artifactRevisions', { artifactId: artifact.id, content, contentHash: hash(content), inputs, originAttemptId, requirementRevisionId, guidanceHash, ...provenance, acceptance: 'candidate', reviewed: false });
+      const humanBrief = provenance.humanBrief ? humanBriefSchema.parse(provenance.humanBrief) : undefined;
+      const revision = this.store.create('artifactRevisions', { artifactId: artifact.id, content, contentHash: hash(content), inputs, originAttemptId, requirementRevisionId, guidanceHash, ...provenance, humanBrief, humanBriefSourceHash: humanBrief ? hash(content) : undefined, acceptance: 'candidate', reviewed: false });
       this.store.update('artifacts', artifact.id, { revisionIds: [...artifact.revisionIds, revision.id], currentRevisionId: revision.id }, artifact.revision);
       if (logicalId === 'spec') for (const session of this.store.list('clarifications', s => s.workItemId === workItemId && s.state !== 'stale' && s.id !== provenance.clarificationSessionId)) {
         this.store.update('clarifications', session.id, { state: 'stale' });
@@ -36,6 +45,30 @@ export class Artifacts {
       this.invalidate(workItemId, logicalId, revision.id);
       return revision;
     });
+  }
+  reading(revisionId: string) {
+    const revision = this.store.get('artifactRevisions', revisionId);
+    return createReading(revision, this.store.get('artifacts', revision.artifactId).logicalId);
+  }
+  readingHtml(revisionId: string) {
+    const revision = this.store.get('artifactRevisions', revisionId);
+    return renderReadingHtml(this.reading(revisionId), this.store.get('artifacts', revision.artifactId).logicalId);
+  }
+  /** Derived files are rebuildable; the canonical write journal owns acceptance. */
+  async exportReading(revisionId: string) {
+    const revision = this.store.get('artifactRevisions', revisionId), artifact = this.store.get('artifacts', revision.artifactId);
+    const item = this.store.get('workItems', artifact.workItemId), reading = this.reading(revisionId);
+    const path = await safePath(item.workspace, `.specflow/work-items/${item.id}/${artifact.logicalId}.human.html`);
+    await mkdir(dirname(path), { recursive: true });
+    const temporary = `${path}.${id()}.tmp`;
+    await writeFile(temporary, renderReadingHtml(reading, artifact.logicalId), 'utf8'); await rename(temporary, path);
+  }
+  private async exportForAcceptance(revisionId: string) {
+    try { await this.exportReading(revisionId); }
+    catch (error) {
+      this.store.emit(revisionId, 'artifact.reading-export-failed', { message: (error as Error).message });
+      throw new DomainError('READING_EXPORT_FAILED', '阅读副本写入失败，完整文档与操作记录已保留；请修复目录或权限后重试接纳');
+    }
   }
   resolve(workItemId: string, reference: string): InputBinding {
     const [logicalId, selection] = reference.split('@');
@@ -81,6 +114,7 @@ export class Artifacts {
     }
   }
   async accept(artifactId: string, expectedRevision: number, actor: string, reason: string, requireReview = true) {
+    assert(!this.integrationLocks.has(this.store.get('artifacts', artifactId).workItemId), 'ARTIFACT_BUSY', '代码正在集成，请完成后再接纳文档');
     assert(!this.locks.has(artifactId), 'ARTIFACT_BUSY', '产物正在接纳');
     this.locks.add(artifactId);
     try {
@@ -96,6 +130,11 @@ export class Artifacts {
       const targetPath = await safePath(item.workspace, `.specflow/work-items/${item.id}/${artifact.logicalId}.md`);
       await mkdir(dirname(targetPath), { recursive: true });
       const prior = await readFile(targetPath, 'utf8').catch(() => null);
+      const pending = this.store.list('fileOperations', op => op.artifactId === artifactId && op.revisionId === revision.id && op.targetPath === targetPath && (op.state === 'prepared' || op.state === 'written')).at(-1);
+      if (pending && prior !== null && hash(prior) === pending.nextHash) {
+        await this.exportForAcceptance(revision.id);
+        return this.commitOperation(pending.id);
+      }
       if (artifact.acceptedRevisionId) {
         const accepted = this.store.get('artifactRevisions', artifact.acceptedRevisionId);
         assert(prior !== null && hash(prior) === accepted.contentHash, 'REVISION_CONFLICT', '工作空间文档在应用外发生变更，请导入并比较后再接纳');
@@ -106,6 +145,7 @@ export class Artifacts {
       assert((latest === null ? null : hash(latest)) === op.previousHash, 'REVISION_CONFLICT', '文档在写入前发生变化');
       const temp = `${targetPath}.${op.id}.tmp`; await writeFile(temp, revision.content, 'utf8'); await rename(temp, targetPath);
       this.store.update('fileOperations', op.id, { state: 'written' });
+      await this.exportForAcceptance(revision.id);
       return this.commitOperation(op.id);
     } finally { this.locks.delete(artifactId); }
   }
@@ -125,8 +165,23 @@ export class Artifacts {
     for (const op of this.store.list('fileOperations', x => x.state === 'prepared' || x.state === 'written')) {
       const content = await readFile(op.targetPath, 'utf8').catch(() => null);
       if (content !== null && hash(content) === op.nextHash) {
+        const artifact = this.store.get('artifacts', op.artifactId), revision = this.store.get('artifactRevisions', op.revisionId);
+        if (artifact.currentRevisionId !== revision.id || !this.revisionFresh(revision) || !this.isFresh(revision.inputs)) { this.store.update('fileOperations', op.id, { state: 'conflict' }); continue; }
+        try { await this.exportForAcceptance(op.revisionId); } catch { continue; }
         try { this.commitOperation(op.id); } catch { this.store.update('fileOperations', op.id, { state: 'conflict' }); }
       } else if (op.state === 'written' || (content === null ? null : hash(content)) !== op.previousHash) this.store.update('fileOperations', op.id, { state: 'conflict' });
+    }
+    // Upgrade previously accepted documents and repair a missing derived export.
+    for (const artifact of this.store.list('artifacts', a => !!a.acceptedRevisionId)) {
+      try {
+        const revision = this.store.get('artifactRevisions', artifact.acceptedRevisionId!);
+        const item = this.store.get('workItems', artifact.workItemId);
+        const path = await safePath(item.workspace, `.specflow/work-items/${item.id}/${artifact.logicalId}.md`);
+        const content = await readFile(path, 'utf8').catch(() => null);
+        if (content !== null && hash(content) === revision.contentHash) await this.exportForAcceptance(revision.id);
+      } catch (error) {
+        if (!(error instanceof DomainError && error.code === 'READING_EXPORT_FAILED')) this.store.emit(artifact.id, 'artifact.reading-export-failed', { message: (error as Error).message });
+      }
     }
   }
   async scanExternalChanges(workItemId: string) {

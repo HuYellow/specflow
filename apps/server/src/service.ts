@@ -16,8 +16,10 @@ import { clarificationOutput, clarificationFresh, assertClarifiedSpec, clarifica
 import type { ClarificationSession } from '../../../packages/domain/index.ts';
 import { createReviewCriteria, reviewInstructions, reviewPassed, reviewReportSchema, validateReviewReport, type ReviewContext } from '../../../packages/review-policy/index.ts';
 import { findingLogicalId, openReviewFindings, reviewArtifactSources, reviewBindings, reviewEvidence, reviewPrompt, reviewSubjectBindings } from './reviews.ts';
+import { humanBriefSchema } from '../../../packages/document-presentation/index.ts';
 
-const resultSchema = z.object({ summary: z.string(), artifacts: z.array(z.object({ logicalId: z.string(), type: z.string(), content: z.string().min(1) })), review: reviewReportSchema.optional(), clarification: clarificationOutput.optional(), findings: z.array(z.object({ severity: z.enum(['blocker', 'warning']), location: z.string().trim().min(1), body: z.string().trim().min(1), targetLogicalId: z.string().optional() })).optional() });
+const resultSchema = z.object({ summary: z.string(), artifacts: z.array(z.object({ logicalId: z.string(), type: z.string(), content: z.string().min(1), humanBrief: humanBriefSchema.optional() })), review: reviewReportSchema.optional(), clarification: clarificationOutput.optional(), findings: z.array(z.object({ severity: z.enum(['blocker', 'warning']), location: z.string().trim().min(1), body: z.string().trim().min(1), targetLogicalId: z.string().optional() })).optional() });
+const documentInstructions = `文档双份输出协议：每个 artifacts 条目分别输出完整、严谨、可供后续 AI 执行的 Markdown content，以及供人快速阅读的 humanBrief。content 是唯一的执行依据，不得为了简报而缩写、删减或省略执行细节；明确本阶段适用的目标、范围与非目标、稳定的需求/决策/任务 ID、接口和输入输出、边界与约束、错误和异常处理、验收条件与验证方式、尚未确认的事项，并通过上游逻辑名称和条目 ID 记录追溯关系。不要虚构测试已通过或把未知信息写成事实。humanBrief 只提炼同一条 content 已写明的结论，不新增需求或执行指令；标题最多 120 字符、摘要最多 600 字符，用 2 至 6 个短章节呈现决策、范围、风险或下一步，每章标题最多 120 字符、1 至 6 条要点且每条最多 300 字符。没有依据的章节应省略，不得编造风险或下一步。简报全部使用纯文本，不输出 HTML、脚本、CSS 或外部资源，展示页面由应用生成。结构示例："humanBrief":{"title":"文档标题","summary":"本阶段的主要结论","sections":[{"title":"范围","items":["正文中已明确的范围"]},{"title":"验收","items":["正文中已明确的验证条件"]}]}。顶层 summary 只是本次运行概述，不能替代每份文档的 humanBrief。`;
 export class EngineeringService {
   readonly artifacts: Artifacts;
   readonly workspaces: Workspaces;
@@ -271,9 +273,9 @@ export class EngineeringService {
         sources.push({ id: `code:${candidate.id}:${baseline}`, kind: 'code', content: await this.workspaces.reviewDiff(workspace, candidate.baseCommit) || '（相对基线没有代码差异，需要核实原始需求是否已经满足）' });
         sources.push(...proofs.map(proof => ({ id: `verification:${proof.id}`, kind: 'verification' as const, content: JSON.stringify(proof) })));
       }
-      review = { version: 1, groupId: id(), perspective: 'coverage', subjects, sources, criteria: createReviewCriteria(subjects.map(s => s.logicalId)), priorFindings: priorFindings.map(f => ({ id: f.id, targetLogicalId: findingLogicalId(this.store, f)!, targetHash: f.targetHash, severity: f.severity, location: f.location, body: f.body })) };
+      review = { version: 1, groupId: id(), perspective: 'coverage', subjects, sources, criteria: createReviewCriteria(subjects.map(s => s.logicalId), sources.some(source => source.kind === 'human_brief')), priorFindings: priorFindings.map(f => ({ id: f.id, targetLogicalId: findingLogicalId(this.store, f)!, targetHash: f.targetHash, severity: f.severity, location: f.location, body: f.body })) };
     }
-    const normalizedPrompt = review ? this.reviewAttemptPrompt(def, workspace, review) : `${prompt}\n依据校验：先从原始需求和项目章程重建本阶段必须满足的条件，再核对上游产物。上一步已接纳或作者声称成功不能代替证据；发现上游矛盾、缺失或未经确认的假设时，返回指向对应产物的 blocker finding，不得静默沿用或伪造验证成功。${correction}\n调用工作区扩展前，先通过 tool_search 激活需要的 SpecFlowRead、SpecFlowList、SpecFlowWrite 或 SpecFlowQuestion。修改现有文件前，使用 SpecFlowRead 取得 contentHash，并以 expectedHash 传给 SpecFlowWrite。`;
+    const normalizedPrompt = review ? this.reviewAttemptPrompt(def, workspace, review) : `${prompt}\n${documentInstructions}\n依据校验：先从原始需求和项目章程重建本阶段必须满足的条件，再核对上游产物。上一步已接纳或作者声称成功不能代替证据；发现上游矛盾、缺失或未经确认的假设时，返回指向对应产物的 blocker finding，不得静默沿用或伪造验证成功。${correction}\n调用工作区扩展前，先通过 tool_search 激活需要的 SpecFlowRead、SpecFlowList、SpecFlowWrite 或 SpecFlowQuestion。修改现有文件前，使用 SpecFlowRead 取得 contentHash，并以 expectedHash 传给 SpecFlowWrite。`;
     const inputHash = hash(JSON.stringify({ bindings, requirementRevisionId: requirements.id, requirementHash: requirements.contentHash, baseline, rulesHash: guidance.contentHash, prompt: normalizedPrompt, target }));
     const attempt = this.store.tx(() => {
       const number = this.store.list('attempts', a => a.nodeRunId === nodeRunId).length + 1;
@@ -508,7 +510,7 @@ export class EngineeringService {
       const spec = output.artifacts[0].content;
       assert(spec.trim().length >= 20 && !/\[NEEDS CLARIFICATION\]|\bTODO\b/.test(spec), 'OUTPUT_INVALID', '澄清后的规格仍有未决信息，请继续澄清');
       this.store.tx(() => {
-        const revision = this.artifacts.create(item.id, 'spec', appendClarificationRecord(spec, session), attempt.inputs.filter(i => i.logicalId !== 'spec'), attempt.id, undefined, { supersedesRevisionId: session.sourceSpecRevisionId, clarificationSessionId: session.id });
+        const revision = this.artifacts.create(item.id, 'spec', appendClarificationRecord(spec, session), attempt.inputs.filter(i => i.logicalId !== 'spec'), attempt.id, undefined, { supersedesRevisionId: session.sourceSpecRevisionId, clarificationSessionId: session.id, humanBrief: output.artifacts[0].humanBrief });
         this.store.update('clarifications', session.id, { state: 'completed', resultSpecRevisionId: revision.id });
         this.store.update('nodes', node.id, { execution: 'completed', gate: 'passed', freshness: 'fresh', blockers: [], error: undefined });
         this.store.update('attempts', attemptId, { execution: 'completed', finishedAt: now(), output: snapshot.output, usage: snapshot.usage });
@@ -528,7 +530,7 @@ export class EngineeringService {
         assert(logicalId && [...def.outputs, ...attempt.inputs.map(i => i.logicalId)].includes(logicalId), 'OUTPUT_INVALID', '阶段发现必须指向当前产物或冻结的上游产物');
       }
       this.store.tx(() => {
-        for (const artifact of output.artifacts) this.artifacts.create(item.id, artifact.logicalId, artifact.content, attempt.inputs, attemptId, undefined, { candidateId: attempt.candidateId, codeHash });
+        for (const artifact of output.artifacts) this.artifacts.create(item.id, artifact.logicalId, artifact.content, attempt.inputs, attemptId, undefined, { candidateId: attempt.candidateId, codeHash, humanBrief: artifact.humanBrief });
         for (const finding of output.findings || []) {
           const logicalId = finding.targetLogicalId || def.outputs[0], target = this.artifacts.resolve(item.id, logicalId);
           this.store.create('findings', { workItemId: item.id, nodeRunId: node.id, originAttemptId: attempt.id, targetLogicalId: logicalId, targetHash: logicalId === 'implementation' && codeHash ? codeHash : target.contentHash, severity: finding.severity, location: finding.location, body: finding.body, status: 'open' });
@@ -583,6 +585,7 @@ export class EngineeringService {
   }
   async acceptCode(workItemId: string, actor: string) {
     assert(!this.workItemLocks.has(workItemId), 'WORKSPACE_BUSY', '工作项正在集成'); this.workItemLocks.add(workItemId);
+    let unlockDocuments: (() => void) | undefined;
     try {
       const item = this.store.get('workItems', workItemId), candidate = this.latestCandidate(item.id); assert(candidate, 'CANDIDATE_MISSING', '尚无候选代码');
       await this.guidance.refresh(item.projectId);
@@ -590,6 +593,7 @@ export class EngineeringService {
       const activeAttempts = this.store.list('attempts', a => ['starting', 'running', 'waiting_interaction', 'reconciling'].includes(a.execution) && this.nodeContext(a.nodeRunId).item.id === item.id);
       assert(!activeAttempts.length, 'WORKSPACE_BUSY', '工作项还有未结束或待核对的执行');
       await this.artifacts.scanExternalChanges(item.id);
+      unlockDocuments = this.artifacts.lockWorkItem(item.id);
       const candidateAttempt = this.store.get('attempts', candidate.attemptId);
       assert(candidateAttempt.execution === 'completed' && requirementFresh(this.store, candidateAttempt.requirementRevisionId) && guidanceFresh(this.store, item.id, candidateAttempt.guidance?.contentHash) && this.artifacts.isFresh(candidateAttempt.inputs), 'INPUT_STALE', '候选代码的执行或原始工程输入已无效');
       const tasks = this.store.list('tasks', t => t.attemptId === candidateAttempt.id);
@@ -621,7 +625,9 @@ export class EngineeringService {
           const path = `.specflow/work-items/${item.id}/${document.logicalId}.md`;
           const content = await readFile(join(item.workspace, path), 'utf8');
           assert(hash(content) === this.store.get('artifactRevisions', document.currentRevisionId).contentHash, 'REVISION_CONFLICT', '文档在集成期间发生变更');
-          await this.workspaces.git(item.workspace, ['add', '--', path]);
+          await this.artifacts.exportReading(document.currentRevisionId);
+          const readingPath = `.specflow/work-items/${item.id}/${document.logicalId}.human.html`;
+          await this.workspaces.git(item.workspace, ['add', '--', path, readingPath]);
         }
         if (await this.workspaces.git(item.workspace, ['diff', '--cached', '--name-only'])) await this.workspaces.git(item.workspace, ['-c', 'user.name=SpecFlow', '-c', 'user.email=specflow@localhost', 'commit', '-m', 'Record accepted engineering artifacts']);
         assert(await treeHash(item.workspace) === fingerprint, 'CODE_STALE', '集成结果与已验证候选不一致');
@@ -629,7 +635,7 @@ export class EngineeringService {
         this.store.update('codeOperations', op.id, { resultCommit, state: 'integrated' });
         return this.commitCodeOperation(op.id, actor);
       } catch (error) { this.store.update('codeOperations', op.id, { state: 'conflict' }); throw error; }
-    } finally { this.workItemLocks.delete(workItemId); }
+    } finally { unlockDocuments?.(); this.workItemLocks.delete(workItemId); }
   }
   private commitCodeOperation(opId: string, actor: string) {
     return this.store.tx(() => {

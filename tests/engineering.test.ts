@@ -22,6 +22,11 @@ test('完整工程链修改隔离仓库，实际测试通过后接纳代码', as
     const report = f.store.list('artifacts', a => a.logicalId === 'convergence')[0]; await f.service.acceptArtifact(report.id, report.revision);
     const item = await f.service.acceptCode(f.item.id, 'test'); assert.equal(item.status, 'accepted');
     assert.equal(f.store.list('runs')[0].state, 'completed');
+    const trackedDocuments = (await f.service.workspaces.git(item.workspace, ['ls-files', '--', `.specflow/work-items/${item.id}`])).split(/\r?\n/);
+    for (const artifact of f.store.list('artifacts', a => a.workItemId === item.id && a.acceptedRevisionId === a.currentRevisionId)) {
+      for (const suffix of ['md', 'human.html']) assert.ok(trackedDocuments.includes(`.specflow/work-items/${item.id}/${artifact.logicalId}.${suffix}`), `${artifact.logicalId}.${suffix} 应随已接纳工程文档进入 Git`);
+      assert.ok(!trackedDocuments.includes(`.specflow/work-items/${item.id}/${artifact.logicalId}.human.md`), `${artifact.logicalId}.human.md 不再作为人类阅读产物进入 Git`);
+    }
     const code = await readFile(join(item.workspace, 'csv.js'), 'utf8'); assert.ok(code.includes('Unclosed quoted field'));
     assert.ok(f.store.list('evidence').every(e => e.exitCode === 0 && e.status === 'passed'));
     const source = await readFile(join(f.store.list('projects')[0].rootPath, 'csv.js'), 'utf8'); assert.ok(!source.includes('Unclosed quoted field'), '源仓库不被直接改写');

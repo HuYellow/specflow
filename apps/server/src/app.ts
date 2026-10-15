@@ -22,7 +22,7 @@ export async function createApp(service: EngineeringService, options: { staticRo
   const app = Fastify({ logger: false, bodyLimit: 5 * 1024 * 1024 });
   const token = options.token || randomBytes(32).toString('hex');
   if (options.desktopSecret) app.addHook('onSend', async (_request, reply, payload) => {
-    reply.header('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'");
+    if (!reply.hasHeader('Content-Security-Policy')) reply.header('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'");
     return payload;
   });
   app.addHook('onRequest', async (request, reply) => {
@@ -118,6 +118,19 @@ export async function createApp(service: EngineeringService, options: { staticRo
   commandRoute('/api/attempts/:id/resume', request => service.resumeAttempt(param(request)));
   commandRoute('/api/interactions/:id/answer', request => { const body = z.object({ answer: z.unknown() }).parse(request.body); return service.answerInteraction(param(request), body.answer); });
   commandRoute('/api/artifacts/:id/revisions', request => { const body = z.object({ expectedRevision: z.number().int().positive(), content: z.string() }).parse(request.body); const a = service.store.get('artifacts', param(request)); const current = service.store.get('artifactRevisions', a.currentRevisionId); return service.artifacts.create(a.workItemId, a.logicalId, body.content, current.inputs, undefined, body.expectedRevision); });
+  app.get('/api/artifact-revisions/:id/reading', (request, reply) => reply.header('Cache-Control', 'no-store').send(service.artifacts.reading(param(request))));
+  app.get('/api/artifact-revisions/:id/reading.html', (request, reply) => {
+    const revision = service.store.get('artifactRevisions', param(request)), artifact = service.store.get('artifacts', revision.artifactId);
+    reply.header('Cache-Control', 'no-store').header('X-Content-Type-Options', 'nosniff')
+      .header('Content-Disposition', `attachment; filename="${artifact.logicalId}.human.html"`)
+      .header('Content-Security-Policy', "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'");
+    return reply.type('text/html; charset=utf-8').send(service.artifacts.readingHtml(revision.id));
+  });
+  app.get('/api/artifact-revisions/:id/source.md', (request, reply) => {
+    const revision = service.store.get('artifactRevisions', param(request)), artifact = service.store.get('artifacts', revision.artifactId);
+    return reply.type('text/markdown; charset=utf-8').header('Cache-Control', 'no-store').header('X-Content-Type-Options', 'nosniff')
+      .header('Content-Disposition', `attachment; filename="${artifact.logicalId}.md"`).send(revision.content);
+  });
   commandRoute('/api/artifacts/:id/accept', request => { const body = z.object({ expectedRevision: z.number().int().positive(), actor: z.string().default('local'), reason: z.string().default('') }).parse(request.body); return service.acceptArtifact(param(request), body.expectedRevision, body.actor, body.reason); });
   commandRoute('/api/artifacts/:id/owner', request => { const body = z.object({ expectedRevision: z.number().int().positive(), owner: z.string().min(1) }).parse(request.body); return service.store.update('artifacts', param(request), { owner: body.owner }, body.expectedRevision); });
   commandRoute('/api/comments', request => { const body = z.object({ artifactRevisionId: z.string(), author: z.string().min(1), body: z.string().min(1), anchor: z.string().default('') }).parse(request.body); service.store.get('artifactRevisions', body.artifactRevisionId); return service.store.create('comments', body); });

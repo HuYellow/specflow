@@ -4,7 +4,7 @@ import { DomainError, type InputBinding } from '../domain/index.ts';
 export type ReviewPerspective = 'coverage' | 'adversarial';
 export interface ReviewSource {
   id: string;
-  kind: 'requirement' | 'guidance' | 'artifact' | 'code' | 'verification';
+  kind: 'requirement' | 'guidance' | 'artifact' | 'human_brief' | 'code' | 'verification';
   content: string;
 }
 export interface ReviewContext {
@@ -52,13 +52,14 @@ export const reviewReportSchema = z.object({
 }).strict();
 export type ReviewReport = z.infer<typeof reviewReportSchema>;
 
-export function createReviewCriteria(subjectLogicalIds: string[]): ReviewContext['criteria'] {
+export function createReviewCriteria(subjectLogicalIds: string[], hasHumanBrief = false): ReviewContext['criteria'] {
   const subjects = [...new Set(subjectLogicalIds)].join('、') || '本次审核对象';
   return [
     { id: 'requirement_coverage', instruction: `先从原始需求正文及每份附件重建预期，再逐项核对 ${subjects} 的覆盖、遗漏和擅自增加的行为；上游产物的自述不构成需求证据。` },
     { id: 'assumptions_boundaries', instruction: '找出未经确认的假设，检查输入约束、异常路径、权限、状态变化和边界条件；构造能推翻当前结论的具体场景。' },
     { id: 'upstream_consistency', instruction: '对照冻结的上游产物、原始需求及项目规则，核对接口、依赖、数据和验收条件是否一致；已接纳的上游结论也可能有错，应回溯到原始依据。' },
     { id: 'verification_sufficiency', instruction: '核对验收条件是否有足够且适用于当前版本的验证依据；区分实际执行结果、验证计划与作者声称，检查缺失、失败和无法验证的场景。' },
+    ...(hasHumanBrief ? [{ id: 'human_brief_consistency', instruction: '逐份比较 human_brief 与同一修订的完整 artifact 正文：摘要不得新增需求、执行指令或无依据的断言，不得与正文矛盾，不得遗漏会改变人类决策的关键边界、风险或未决事项，不得把验证计划、待复核或失败状态说成已成功。可以缩短细节，但不能改变含义。此项检查必须分别引用每份 human_brief 和它对应的 artifact 正文，说明具体比对结论；简报是待审核对象，不能作为正文正确或执行成功的依据。' }] : []),
   ];
 }
 
@@ -117,6 +118,17 @@ export function validateReviewReport(context: ReviewContext, input: unknown): Re
     if (sources.get(sourceId)?.kind !== 'artifact' || !cited.has(sourceId)) invalid(`缺少审核对象 ${subject.logicalId} 当前版本的证据`);
   }
   for (const source of context.sources) if (source.content.trim() && !cited.has(source.id)) invalid(`未核对冻结的 ${source.kind} 材料 ${source.id}`);
+  const briefs = context.sources.filter(source => source.kind === 'human_brief');
+  if (briefs.length) {
+    const comparison = report.checks.find(check => check.criterionId === 'human_brief_consistency');
+    if (!comparison) invalid('缺少人类简报与正文的一致性检查');
+    const compared = new Set(comparison.evidence.map(evidence => evidence.sourceId));
+    for (const brief of briefs) {
+      const sourceId = brief.id.startsWith('human-brief:') ? `artifact:${brief.id.slice('human-brief:'.length)}` : '';
+      if (sources.get(sourceId)?.kind !== 'artifact') invalid(`人类简报 ${brief.id} 缺少对应的正文材料`);
+      if (!compared.has(brief.id) || !compared.has(sourceId)) invalid(`人类简报一致性检查必须同时引用 ${brief.id} 及对应正文 ${sourceId}`);
+    }
+  }
   // A code review must inspect both the actual patch and its verification evidence.
   if (context.sources.some(source => source.kind === 'code')) {
     for (const kind of ['code', 'verification'] as const) {
@@ -175,7 +187,7 @@ export function reviewInstructions(context: ReviewContext): string {
     summary: '示例仅展示结构；必须独立检查材料并填写实际结论。',
     checks: context.criteria.map((criterion, index) => ({
       criterionId: criterion.id, result: 'unknown', explanation: '填写由原始需求重建的预期、核对结果与尚未确认的具体问题。',
-      evidence: index === 0 ? exampleEvidence : exampleEvidence.slice(0, 1),
+      evidence: index === 0 ? exampleEvidence : criterion.id === 'human_brief_consistency' ? exampleEvidence.filter(item => context.sources.some(source => source.id === item.sourceId && ['artifact', 'human_brief'].includes(source.kind))) : exampleEvidence.slice(0, 1),
       counterexample: { scenario: '填写能够推翻本项结论的具体输入、前置状态及预期行为。', outcome: 'not_checked', reason: '填写实际核对或验证过程；没有检查时明确说明缺失的证据。' },
     })),
     resolutions: context.priorFindings.map(finding => ({ findingId: finding.id, result: 'unknown', evidence: [], explanation: '按原问题的失效场景重新核对当前材料，尚无证据时保持 unknown。' })),
@@ -192,7 +204,7 @@ export function reviewInstructions(context: ReviewContext): string {
     `必须逐一返回且不得改名、增删、重复的准则：${JSON.stringify(context.criteria)}。`,
     `必须逐一重新检查的历史问题：${JSON.stringify(context.priorFindings)}。不要借用上一视角或上一轮的修复结论；按问题原本的失效场景检查当前版本，仅改写“已修复”说明不代表问题已解决。`,
     '只返回一个符合下列 StageOutput 示例结构的 JSON 对象，不能附带 Markdown 或自由文本。审核报告放在 review 字段，顶层 summary 为简要说明，artifacts 为 []；findings 字段必须显式提供（可为 []），可补充具体问题，服务会为 revise/inconclusive 的失败或未知检查自动生成阻塞问题。每个 check 的 explanation 应说明独立预期、比对结果及理由；evidence 必须是冻结材料中逐字存在的具体 quote，sourceId 必须出自清单。每项 check 至少引用一段有意义的原文。',
-    '全部 checks 合计必须引用清单中的每份非空冻结材料，包括每份原始 requirement、项目 guidance、上游 artifact、审核对象 artifact:<artifactRevisionId> 以及每份 code 和 verification。引用 code 必须核对实际补丁或新增文件，不能仅以版本号替代。不能虚构引文、执行命令或测试结果，不能把验证计划当作执行成功。',
+    '全部 checks 合计必须引用清单中的每份非空冻结材料，包括每份原始 requirement、项目 guidance、上游 artifact、审核对象 artifact:<artifactRevisionId>、每份 human_brief，以及每份 code 和 verification。包含 human_brief 时，human_brief_consistency 检查必须分别引用每份 human-brief:<artifactRevisionId> 及对应 artifact:<artifactRevisionId> 的原文，检查简报有无矛盾、无依据新增、会误导人类决策的省略或虚假成功声明；人类简报只作为待比较的证据，后续执行依据仍为完整正文。引用 code 必须核对实际补丁或新增文件，不能仅以版本号替代。不能虚构引文、执行命令或测试结果，不能把验证计划当作执行成功。',
     '每项 check 必须给出可证伪的具体 counterexample：scenario 写输入、状态与行为；outcome 只能为 ruled_out（实际核对后排除）、reproduced（发现失败）、not_checked（未能检查）；reason 写核对过程或证据缺口。result 只能为 pass/fail/unknown，pass 必须排除该反例；没有充分依据时选 unknown。',
     '每个 priorFinding 恰好对应一条 resolution，result 为 fixed/open/unknown；fixed 必须引用该目标当前 artifact 原文，代码问题还必须引用实际 code 证据，explanation 说明原失效场景为何不再成立。warning 未修复可保留 open，blocker 未修复或无法确认必须阻塞。',
     'verdict 只能为 pass/revise/inconclusive。只有全部准则 pass、全部反例 ruled_out、所有历史 blocker fixed 才能 pass；已证实缺陷使用 revise，证据不足或无法确认使用 inconclusive。unknown 与 not_checked 绝不放行。示例中的 unknown 不是审核结论，必须按实际结果重写：',

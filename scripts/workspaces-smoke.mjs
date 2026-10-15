@@ -75,7 +75,10 @@ try {
   await items.getByRole('button', { name: 'A 的导入功能', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'A 的导入功能', exact: true })).toBeVisible();
   await expect(artifacts.getByRole('button')).toHaveCount(2); await expect(artifacts.getByRole('button', { name: '需求规格', exact: true })).toBeVisible(); await expect(artifacts.getByRole('button', { name: 'custom_note', exact: true })).toBeVisible();
-  await artifacts.getByRole('button', { name: '需求规格', exact: true }).click(); await page.getByRole('textbox', { name: '文档正文' }).waitFor();
+  await artifacts.getByRole('button', { name: '需求规格', exact: true }).click();
+  await expect(page.getByRole('article', { name: '人类简报', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'AI 执行文档', exact: true }).click();
+  await page.getByRole('textbox', { name: '文档正文' }).waitFor();
   assert.ok((await page.getByRole('textbox', { name: '文档正文' }).inputValue()).includes('A-SPEC-101'));
   report.checks.push('workspace chooser scopes work items; sidebar shows only existing artifacts of the selected item, including custom artifacts');
 
