@@ -5,6 +5,9 @@ on:
     tags: ['desktop-v*']
 permissions:
   contents: read
+concurrency:
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: false
 jobs:
   package:
     strategy:
@@ -15,14 +18,20 @@ jobs:
             platform: win
             arch: x64
             script: desktop:package:win
+            certificate: WIN_CSC_LINK
+            certificatePassword: WIN_CSC_KEY_PASSWORD
           - os: macos-15
             platform: mac
             arch: arm64
             script: desktop:package:mac:arm64
+            certificate: MAC_CSC_LINK
+            certificatePassword: MAC_CSC_KEY_PASSWORD
           - os: macos-15-intel
             platform: mac
             arch: x64
             script: desktop:package:mac:x64
+            certificate: MAC_CSC_LINK
+            certificatePassword: MAC_CSC_KEY_PASSWORD
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -31,16 +40,27 @@ jobs:
           node-version: '24.19.0'
           cache: npm
       - run: npm ci
+      - name: Verify release source and version/tag agreement
+        run: node scripts/desktop-release.mjs verify
       - name: Install release signature verifier on macOS
         if: runner.os == 'macOS'
         run: brew list gnupg || brew install gnupg
       - name: Prepare approved Maka release runtime
-        run: node -e "const r=require('./config/maka-release.json'); if(r.status==='approved') require('child_process').execSync('npm run maka:setup',{stdio:'inherit'}); else console.log(r.reason)"
+        run: npm run maka:setup
       - run: npm test
       - name: Build packages
         run: npm run ${{ matrix.script }}
         env:
-          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+          CSC_LINK: ${{ secrets[matrix.certificate] }}
+          CSC_KEY_PASSWORD: ${{ secrets[matrix.certificatePassword] }}
+          CSC_IDENTITY_AUTO_DISCOVERY: ${{ github.ref_type == 'tag' && 'true' || 'false' }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          SPECFLOW_REQUIRE_SIGNED_RELEASE: ${{ vars.SPECFLOW_REQUIRE_SIGNED_RELEASE || 'false' }}
+      - name: Verify Windows installer directory rules with NSIS
+        if: runner.os == 'Windows'
+        run: npm run desktop:smoke:installer-directory
       - name: Smoke test packaged desktop
         run: node scripts/toolchain.mjs desktop-smoke --packaged --${{ matrix.arch }}
       - uses: actions/upload-artifact@v4
@@ -50,5 +70,48 @@ jobs:
             release/*.exe
             release/*.dmg
             release/*.zip
+            release/*.blockmap
+            release/latest*.yml
             release/desktop-smoke-*.json
           if-no-files-found: error
+          retention-days: 14
+  release:
+    if: github.ref_type == 'tag'
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.19.0'
+          cache: npm
+      - run: npm ci
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: SpecFlow-*
+          path: .tools/desktop-artifacts
+      - name: Validate installers and merge both macOS update manifests
+        run: node scripts/desktop-release.mjs assemble
+      - name: Publish complete GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DESKTOP_RELEASE_TAG: ${{ github.ref_name }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if release_state=$(gh release view "$DESKTOP_RELEASE_TAG" --json isDraft --jq .isDraft 2>/dev/null); then
+            if [ "$release_state" != "true" ]; then
+              echo "This version is already published. Increment package.json instead of replacing it."
+              exit 1
+            fi
+          else
+            gh release create "$DESKTOP_RELEASE_TAG" --draft \
+              --verify-tag --title "SpecFlow ${DESKTOP_RELEASE_TAG#desktop-v}" \
+              --generate-notes
+          fi
+          gh release upload "$DESKTOP_RELEASE_TAG" release/publish/* --clobber
+          gh release edit "$DESKTOP_RELEASE_TAG" --draft=false --latest

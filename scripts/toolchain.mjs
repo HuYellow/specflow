@@ -38,6 +38,8 @@ try {
     await run(['scripts/desktop.mjs', ...process.argv.slice(3)]);
   } else if (command === 'desktop-smoke') {
     await run(['scripts/desktop-smoke.mjs', ...process.argv.slice(3)]);
+  } else if (command === 'installer-directory-smoke') {
+    await run(['scripts/installer-directory-smoke.mjs', ...process.argv.slice(3)]);
   } else if (command === 'requirements-smoke') {
     await run(['scripts/requirements-smoke.mjs', ...process.argv.slice(3)]);
   } else if (command === 'clarify-smoke') {

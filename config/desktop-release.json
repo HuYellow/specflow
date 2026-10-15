@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "provider": "github",
+  "owner": "HuYellow",
+  "repo": "specflow",
+  "channel": "latest",
+  "tagNamePrefix": "desktop-v"
+}

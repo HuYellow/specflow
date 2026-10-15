@@ -1,25 +1,76 @@
 import { _electron as electron } from '@playwright/test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
-import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { cp, mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
-import { spawn } from 'node:child_process';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { execFile, spawn } from 'node:child_process';
+import { promisify } from 'node:util';
 
 const root = resolve(import.meta.dirname, '..');
 const makaRelease = JSON.parse(await readFile(join(root, 'config/maka-release.json'), 'utf8'));
 const approvedMaka = makaRelease.status === 'approved' && typeof makaRelease.packageVersion === 'string';
 const require = createRequire(import.meta.url);
-const packaged = process.argv.includes('--packaged');
+const execFileAsync = promisify(execFile);
+const executableIndex = process.argv.indexOf('--executable');
+const explicitExecutable = executableIndex === -1 ? undefined : process.argv[executableIndex + 1];
+if (executableIndex !== -1 && (!explicitExecutable || !isAbsolute(explicitExecutable))) throw new Error('--executable requires an absolute path to an installed SpecFlow executable.');
+const packaged = process.argv.includes('--packaged') || !!explicitExecutable;
 const arch = process.argv.includes('--arm64') ? 'arm64' : process.argv.includes('--x64') ? 'x64' : process.arch;
-const binary = packaged ? (process.platform === 'win32' ? join(root, 'release/win-unpacked/SpecFlow.exe') : join(root, `release/${arch === 'arm64' ? 'mac-arm64' : 'mac'}/SpecFlow.app/Contents/MacOS/SpecFlow`)) : require('electron');
+const sourceBinary = explicitExecutable || (packaged ? (process.platform === 'win32' ? join(root, 'release/win-unpacked/SpecFlow.exe') : join(root, `release/${arch === 'arm64' ? 'mac-arm64' : 'mac'}/SpecFlow.app/Contents/MacOS/SpecFlow`)) : require('electron'));
+let binary = sourceBinary;
 const userData = await mkdtemp(join(tmpdir(), 'specflow-desktop-test-'));
 const env = { ...process.env, SPECFLOW_DESKTOP_USER_DATA: userData };
 delete env.SPECFLOW_DATA_DIR; delete env.SPECFLOW_MAKA_ROOT; delete env.ELECTRON_RUN_AS_NODE;
+delete env.NODE_OPTIONS; delete env.NODE_PATH;
 const launch = () => electron.launch({ executablePath: binary, args: packaged ? [] : [root], cwd: tmpdir(), env, timeout: 90000 });
 let application;
-const record = { platform: process.platform, arch, packaged, userData, checks: [], testedAt: new Date().toISOString() };
+const record = { platform: process.platform, arch, packaged, sourceExecutablePath: sourceBinary, executablePath: binary, userData, checks: [], testedAt: new Date().toISOString() };
 try {
+  if (packaged && !explicitExecutable) {
+    // A package below this repository can accidentally resolve missing modules from
+    // the development node_modules. Exercise the full package outside that tree.
+    const isolationDirectory = await mkdtemp(join(tmpdir(), 'specflow-packaged-test-'));
+    const fromWorkspace = relative(root, isolationDirectory);
+    assert.ok(isAbsolute(fromWorkspace) || fromWorkspace === '..' || fromWorkspace.startsWith(`..${sep}`), 'The packaged smoke directory must be outside the workspace');
+    const sourceApplication = process.platform === 'win32' ? dirname(sourceBinary) : resolve(sourceBinary, '../../..');
+    const isolatedApplication = join(isolationDirectory, basename(sourceApplication));
+    record.isolatedPackageDirectory = isolatedApplication;
+    await cp(sourceApplication, isolatedApplication, { recursive: true, verbatimSymlinks: true });
+    binary = join(isolatedApplication, relative(sourceApplication, sourceBinary));
+    record.executablePath = binary;
+    record.checks.push('complete packaged application copied outside the workspace before launch');
+  }
+  const resourceDirectory = packaged
+    ? (process.platform === 'win32' ? join(dirname(binary), 'resources') : resolve(dirname(binary), '../Resources'))
+    : join(root, '.tools/desktop');
+  const backendDirectory = join(resourceDirectory, packaged ? 'specflow' : 'resources');
+  const runtimeDirectory = join(resourceDirectory, 'runtime');
+  const nodeBinary = join(runtimeDirectory, process.platform === 'win32' ? 'node.exe' : 'bin/node');
+  const npmCli = join(runtimeDirectory, process.platform === 'win32' ? 'node_modules/npm/bin/npm-cli.js' : 'lib/node_modules/npm/bin/npm-cli.js');
+  // Resolve and load with the shipped Node, from the same directory as server.mjs.
+  // Check ownership as well as loading, even when testing a development package.
+  const dependencyProbe = await execFileAsync(nodeBinary, ['--input-type=module', '-e', `
+    import assert from 'node:assert/strict';
+    import { realpathSync } from 'node:fs';
+    import { isAbsolute, join, relative, sep } from 'node:path';
+    import { fileURLToPath } from 'node:url';
+    const dependencyRoot = realpathSync(join(process.cwd(), 'node_modules'));
+    const dependencies = {};
+    for (const name of ['fastify', '@fastify/static', 'yaml', 'zod']) {
+      const url = import.meta.resolve(name);
+      const path = realpathSync(fileURLToPath(url));
+      const local = relative(dependencyRoot, path);
+      assert.ok(local && !isAbsolute(local) && local !== '..' && !local.startsWith('..' + sep), name + ' must resolve inside bundled node_modules: ' + path);
+      await import(url);
+      dependencies[name] = path;
+    }
+    console.log(JSON.stringify({ node: process.version, dependencies }));
+  `], { cwd: backendDirectory, env, windowsHide: true, timeout: 30000 });
+  const npmProbe = await execFileAsync(nodeBinary, [npmCli, '--version'], { cwd: backendDirectory, env, windowsHide: true, timeout: 30000 });
+  record.bundledRuntime = { nodeBinary, npmCli, ...JSON.parse(dependencyProbe.stdout), npmVersion: npmProbe.stdout.trim() };
+  assert.match(record.bundledRuntime.npmVersion, /^\d+\.\d+\.\d+$/);
+  record.checks.push('bundled Node loads backend dependencies from its own package; bundled npm CLI and dependencies execute');
   application = await launch();
   let page = await application.firstWindow();
   const errors = [];
@@ -31,6 +82,19 @@ try {
   assert.equal((await fetch(`${url}/`)).status, 403);
   assert.deepEqual(await page.evaluate(() => ({ require: typeof window.require, node: typeof window.process, bridge: typeof window.specflowDesktop?.pickRepository })), { require: 'undefined', node: 'undefined', bridge: 'function' });
   record.checks.push('bundled runtime launch from unrelated cwd; renderer isolation; backend authentication');
+  const updateMenus = await application.evaluate(({ Menu }) => {
+    const menu = Menu.getApplicationMenu();
+    return ['specflow-update-check', 'specflow-update-download', 'specflow-update-install'].map(id => {
+      const item = menu?.getMenuItemById(id);
+      return { id, label: item?.label, enabled: item?.enabled };
+    });
+  });
+  assert.deepEqual(updateMenus, [
+    { id: 'specflow-update-check', label: '检查更新…', enabled: true },
+    { id: 'specflow-update-download', label: '下载更新…', enabled: false },
+    { id: 'specflow-update-install', label: '重启并安装更新…', enabled: false },
+  ]);
+  record.checks.push('native update menu is available; downloading and installation require an available/verified update');
   // The second launch must focus the existing instance and exit without another backend.
   const second = spawn(binary, packaged ? [] : [root], { env, cwd: tmpdir(), windowsHide: true, stdio: 'ignore' });
   await new Promise((done, reject) => {

@@ -1,45 +1,71 @@
-# SpecFlow 桌面版
+# SpecFlow 桌面安装、更新与发布
 
-日期：2026-10-12。桌面代码支持 Windows x64、macOS Apple Silicon 与 Intel。
-Windows 已生成安装包并通过打包程序验收；macOS 原生构建和启动验收等待 Mac 或 CI 执行。
+更新日期：2026-10-15。目标平台为 Windows x64、macOS Apple Silicon 和 macOS Intel。桌面版使用独立 Electron 窗口，自动管理本地工程服务与 Maka Runtime Host。
 
-当前内置 Maka 0.2.0 暂时从 Apache 的签名正式源码包构建，后续改为正式 npm 依赖。安装包只包含 Runtime Host 及生产依赖，继续禁止 dev。底座独立选择、切换和新适配器暂缓。参见 [运行时管理记录](maka-runtime-management.md)。
+当前内置 Maka 0.2.0 从 Apache 签名正式源码发行版构建，仅包含 Runtime Host 及生产依赖。源码、编译器、测试、CLI/Eval 和构建缓存不进入桌面包；禁止使用 dev、nightly、snapshot、RC、占位包或其他开发构建替代正式版本。当前继续使用 Maka，独立底座选择、切换和新增适配器暂缓。详见 [运行时管理](maka-runtime-management.md)。
 
-## 安装与运行
+## 获取安装包
 
-Windows 安装包位于 `release/SpecFlow-0.1.0-win-x64.exe`。安装向导支持选择安装目录，创建桌面和开始菜单快捷方式。开发者也可直接打开 `release/win-unpacked/SpecFlow.exe`。
+正式安装包入口为 [GitHub Releases](https://github.com/HuYellow/specflow/releases)，最新正式版本入口为 [Latest Release](https://github.com/HuYellow/specflow/releases/latest)。**截至 2026-10-15，仓库尚未发布 GitHub Release**；首次正式发布前，可使用维护者提供的本地构建产物。Actions artifact 是构建产物，只有正式 Release 中的完整资产才构成应用更新源。
 
-安装包包含 Electron、固定版 Node.js 24.19.0、npm、Maka 0.2.0 Runtime Host、工作区扩展和前后端资源。Maka 源码、编译器、测试、CLI/Eval 和构建缓存不进入安装包。运行时不要求用户安装 Node.js、GPG 或执行 npm。应用仍使用本机 Git；验证其他项目时需要该项目自身的工具链。
+| 系统与架构 | 文件 | 安装方式 |
+| --- | --- | --- |
+| Windows x64 | `SpecFlow-<版本>-win-x64.exe` | 运行安装向导，可选择安装目录并创建桌面、开始菜单快捷方式 |
+| macOS Apple Silicon | `SpecFlow-<版本>-mac-arm64.dmg` | 打开 DMG，将 SpecFlow 拖入 Applications |
+| macOS Intel | `SpecFlow-<版本>-mac-x64.dmg` | 打开 DMG，将 SpecFlow 拖入 Applications |
 
-macOS 构建输出 `SpecFlow-0.1.0-mac-arm64.dmg/.zip` 和 `SpecFlow-0.1.0-mac-x64.dmg/.zip`。DMG 中的应用拖入 Applications 后运行。两个架构分别构建，避免混合本地模块与运行时。
+macOS 同时生成同架构的 `.zip`，供更新器使用或手动解压安装。Windows 的 `release/win-unpacked/SpecFlow.exe` 供开发验收使用，正式用户应通过安装程序安装。安装和覆盖升级无需先卸载旧版。
 
-当前安装包未配置发布签名。Windows 没有 Authenticode 签名；macOS 尚无 Developer ID 与公证结果。公开发布时需要在原生构建环境补齐证书和 Apple 公证。
+Windows 选择磁盘根目录时，安装器会立即在目录输入框显示完整目标，例如选择 `H:\` 后显示 `H:\specflow`，确认安装后才创建该子目录。选择具体文件夹时直接使用该文件夹，例如 `H:\Apps\MyWorkbench`，不再追加目录；已经选择 `H:\specflow` 也不会重复嵌套。取消“浏览文件夹”保留原路径。
 
-## 桌面行为
+安装包包含 Electron、固定版 Node.js 24.19.0、npm、Maka 0.2.0 Runtime Host、工作区扩展和前后端资源。用户无需安装 Node.js、GPG 或执行 npm。应用依赖本机 Git：Windows 安装 Git for Windows；macOS 安装 Xcode Command Line Tools 或 Git。运行项目验证命令还需要项目自身的编译器、包管理器等工具。
 
-- 使用独立窗口、系统菜单和图标，保留上次窗口尺寸。
-- 单实例运行，再次打开会唤起原窗口。
+Windows 已有打包程序本机验收记录。macOS 需要原生构建与运行验收。当前尚未配置 Windows Authenticode 签名、macOS Developer ID 签名及 Apple 公证，尚无对应通过记录；操作系统可能对未签名应用显示安全提示。
+
+## 检查与安装更新
+
+安装版使用 `electron-updater`，从 `config/desktop-release.json` 指定的 GitHub 仓库读取正式发行版本，当前发布源为 `HuYellow/specflow`，通道为 `latest`。发布源在构建时固定，界面不接受任意更新服务器地址。开发模式不执行真实安装更新。
+
+用户可以通过原生“帮助”菜单完成更新：
+
+1. **检查更新…**：显示当前版本和检查结果；发现新版后提供下载入口。手动检查遇到网络或发行元数据错误时显示可重试信息。
+2. **下载更新…**：只有用户选择后才下载，菜单显示下载状态；下载完成后可选择稍后安装。
+3. **重启并安装更新…**：明确提醒先保存文档、等待运行结束；再次确认后关闭工程服务并交给更新器安装和重启。
+4. **下载与发行说明**：打开 GitHub Releases 页面，用于查看变更、首次安装或手动升级。
+
+“关于 SpecFlow”显示应用版本和更新状态。应用启动 15 秒后检查一次，之后每 6 小时检查一次；后台网络失败仅写入诊断日志，后续仍可手动重试。检查不会自动下载，正常退出也不会自动安装已下载的更新。
+
+Windows 使用 NSIS 安装包原位更新。本项目的 macOS 原位更新构建要求 Developer ID 签名与 Apple 公证；未签名构建仍可检查新版和打开下载页面，用户下载匹配架构的新 DMG 后，将新版拖入 Applications 替换旧版。macOS ZIP 是自动更新的必要资产，不能只上传 DMG。
+
+更新器校验发行元数据中的下载文件哈希；macOS 原位更新还依赖系统签名校验。校验哈希不能代替安装包签名，维护者仍需保护发布仓库和签名证书。签名、网络、平台或元数据不满足条件时，可通过 Releases 页面手动安装。
+
+更新只替换应用文件。工程数据库、工作区和 Maka 状态位于用户数据目录；升级前可通过“文件 → 打开数据目录”备份工程数据。更新不会把 Web 工作台的数据自动迁入桌面版。
+
+## 桌面行为与数据
+
+- 独立窗口、系统菜单和图标，保留上次窗口尺寸与工作项查看位置。
+- 单实例运行，再次打开唤起原窗口。
 - 自动启动随包工程服务，由操作系统分配空闲端口。
-- 主进程为本地请求添加会话凭据，普通浏览器无法访问桌面接口。
+- 主进程为本地请求添加会话凭据，普通浏览器不能访问桌面接口。
 - 页面使用隔离上下文和渲染沙箱，不开放 Node.js 与任意 IPC。
 - 原生目录选择器用于注册仓库，保存对话框用于导出工程记录。
 - Windows 关闭最后窗口即退出；macOS 关闭窗口保留应用，Cmd+Q 退出。
-- 正常退出通知服务清理验证器、HTTP/SSE、Maka 和 SQLite。
-- 父进程连接丢失时服务关闭；独立存活检测覆盖 IPC 未及时断开的崩溃情况。超时退出对应用所属服务进程执行清理。
+- 正常退出时清理验证器、HTTP/SSE、Maka 和 SQLite；父进程丢失时工程服务退出，超时退出会清理应用所属服务进程。
 
-应用把数据放在系统用户目录：
+| 数据 | Windows | macOS |
+| --- | --- | --- |
+| 工程数据与工作区 | `%APPDATA%/SpecFlow/engineering` | `~/Library/Application Support/SpecFlow/engineering` |
+| 诊断日志 | `%APPDATA%/SpecFlow/logs/desktop.log` | `~/Library/Application Support/SpecFlow/logs/desktop.log` |
 
-| 系统 | 默认位置 |
-| --- | --- |
-| Windows | `%APPDATA%/SpecFlow/engineering` |
-| macOS | `~/Library/Application Support/SpecFlow/engineering` |
+“文件”菜单可打开数据和日志目录。卸载保留工程数据。桌面与 Web 工作台默认使用各自的数据目录；避免让两个服务同时使用同一个 SQLite 数据库和 Maka 状态根。
 
-日志保存在对应的 `SpecFlow/logs/desktop.log`。菜单“文件”可以打开数据和日志目录。
-卸载保留工程数据。桌面与 Web 工作台默认使用各自的数据目录；已有 Web 工程不会自动迁移。避免同时让两个服务使用同一个 SQLite 和 Maka 状态根。
+正式 Maka 状态位于 `engineering/maka/0.2.0`，Web 版对应 `.specflow-data/local/maka/0.2.0`。此前 dev 状态目录保留，不做降级迁移；SpecFlow 工程数据库和 Git 工作区保留。旧 Maka 会话和连接不会自动迁入正式版，真实模型连接可在设置中重新添加。
 
-正式 Maka 的运行状态位于 `engineering/maka/0.2.0`，Web 版对应 `.specflow-data/local/maka/0.2.0`。此前 dev 的状态目录保留，未尝试降级迁移；SpecFlow 工程数据库和 Git 工作区保留。旧 Maka 会话和连接不会自动迁入正式版，真实连接可在设置中重新添加。
+固定版 Maka 的内置文件 worker 在 Windows 上不可用，因此使用 `specflow.workspace` Host 扩展访问 SpecFlow 创建的工作区，不自动启用全局 Bypass。插件存储的两处目录 fsync 需要 Windows 兼容补丁，只有固定版本与原始文件哈希符合时才应用，记录见包内 `specflow-compatibility.json`。文件和日志仍会刷新，目录元数据的断电持久性不作保证。工作区文件边界不构成操作系统沙箱，验证命令会在本机执行。
 
 ## 开发与打包
+
+开发环境需要 Node.js 24、npm、Git 和 GPG。首次准备：
 
 ```powershell
 npm ci
@@ -47,40 +73,103 @@ npm run maka:setup
 npm run desktop:dev
 ```
 
-`desktop:dev` 构建当前界面、下载并校验运行时，然后打开桌面窗口。若只需准备资源，执行 `npm run desktop:prepare`。
+`desktop:dev` 构建界面、下载并校验 Node.js 运行时，再打开桌面窗口。只准备资源可运行 `npm run desktop:prepare`。
 
 ```powershell
+# Windows x64
 npm run desktop:package:win
 npm run desktop:smoke:packaged
+npm run desktop:smoke:installer-directory
+
+# Apple Silicon Mac
+npm run desktop:package:mac:arm64
+
+# Intel Mac
+npm run desktop:package:mac:x64
 ```
 
-在 Apple Silicon Mac 执行 `npm run desktop:package:mac:arm64`；Intel Mac 执行 `npm run desktop:package:mac:x64`。直接执行 `npm run desktop:package:mac` 使用当前 Mac 的架构。
+直接运行 `npm run desktop:package:mac` 使用当前 Mac 架构。构建必须匹配系统和 CPU 架构：Windows 不能可靠保留 macOS 包的符号链接、可执行权限和本地模块，脚本因此拒绝跨系统或跨架构打包。
 
-构建需要匹配的系统与 CPU 架构。Windows 无法可靠保留 macOS 包中的符号链接和可执行权限，因此脚本在跨系统构建前明确拒绝，防止输出损坏的应用。运行时下载来自 nodejs.org，校验官方 `SHASUMS256.txt`，记录保存在包内 `runtime-integrity.json`。
+Node.js 运行时来自 nodejs.org，构建时校验官方 `SHASUMS256.txt`，记录保存在包内 `runtime-integrity.json`。Maka 准备、运行和打包均检查 `config/maka-release.json` 中固定的版本、来源、源码校验和及签名者指纹。无法取得或适配正式发行版时构建失败，不回退到开发包。
 
-`.github/workflows/desktop.yml` 配置 Windows、Apple Silicon Mac 和 Intel Mac 三个原生任务。支持手动触发或 `desktop-v*` 标签触发，先测试，再打包并验收打包程序，最后上传安装包。当前没有推送或触发远端任务。
+产物写入 `release/`。安装包以 `package.json` 的 `version` 命名，版本变更后，示例文件名中的 `<版本>` 随之变化。
 
-## 验收证据
+## 发布正式版本
 
-Windows 的开发桌面和打包程序均从与工程无关的工作目录启动，使用隔离的临时用户目录，通过：
+发布源由 `config/desktop-release.json` 统一定义：
+
+```json
+{
+  "schemaVersion": 1,
+  "provider": "github",
+  "owner": "HuYellow",
+  "repo": "specflow",
+  "channel": "latest",
+  "tagNamePrefix": "desktop-v"
+}
+```
+
+维护者迁移或 fork 仓库时，应先修改此配置，使安装包内置的更新源与实际发布仓库一致，再构建发布。现有安装版继续查询构建时的发布源；仅修改仓库配置不会改变已经安装的应用。
+
+`.github/workflows/desktop.yml` 在 Windows x64、Apple Silicon Mac 和 Intel Mac 三个原生环境中测试、构建和验收。手动 `workflow_dispatch` 仅上传保留 14 天的 Actions artifacts；推送与 `package.json` 版本完全一致的 `desktop-v<版本>` 标签才创建 GitHub Release。例如版本为 `0.1.0` 时，标签为 `desktop-v0.1.0`。
+
+维护者发布前应完成：
+
+1. 更新 `package.json` 和锁文件中的版本，核对更新源，完成类型检查、测试和本机打包验收。
+2. 按需要配置签名身份与证书。macOS 原位更新需要稳定的 Developer ID 签名和完整公证凭据；未配置时生成支持手动更新的安装包。Windows 建议使用 Authenticode 签名，降低系统安全提示并验证发布者身份。
+3. 提交版本变更，推送相应 `desktop-v<版本>` 标签，等待三个原生构建和验收任务通过。
+4. 核对 Release 的平台安装包、更新元数据与校验结果，再用已安装的上一版本验证“检查 → 下载 → 重启安装”。
+
+CI Secrets 配置如下；证书链接或其 Base64 内容由 electron-builder 读取，不应写入仓库：
+
+| Secrets | 用途 | 配置要求 |
+| --- | --- | --- |
+| `MAC_CSC_LINK`、`MAC_CSC_KEY_PASSWORD` | macOS Developer ID 证书及口令 | macOS 原位更新需要 |
+| `APPLE_ID`、`APPLE_APP_SPECIFIC_PASSWORD`、`APPLE_TEAM_ID` | Apple 公证账号、专用口令与团队 | macOS 原位更新需要 |
+| `WIN_CSC_LINK`、`WIN_CSC_KEY_PASSWORD` | Windows Authenticode 证书及口令 | 可选，建议配置 |
+
+缺少签名与公证配置的 macOS 应用使用检查更新与手动安装路径，不提供原位更新。若发行方要求 macOS 必须签名和公证，可设置仓库变量 `SPECFLOW_REQUIRE_SIGNED_RELEASE=true`；此时缺少凭据将使构建明确失败。
+
+Release 必须完整保留以下资产，不能只上传可见安装包：
+
+| 资产 | 用途 |
+| --- | --- |
+| Windows `.exe` | 首次安装与 NSIS 更新 |
+| macOS arm64 / x64 `.dmg` | 首次安装、手动升级 |
+| macOS arm64 / x64 `.zip` | macOS 自动更新 |
+| `latest.yml` | Windows 正式通道版本和文件校验元数据 |
+| `latest-mac.yml` | 合并两个 macOS 架构的版本和文件校验元数据 |
+| `.blockmap` | 更新器生成的分块下载元数据 |
+
+工作流合并两个 macOS 构建生成的更新元数据，避免上传同名文件时覆盖另一个架构。更新版本必须高于用户当前安装版本；相同版本重新上传安装包不会构成新版本更新。发布权限、证书与网络均需在实际 CI 环境中配置，本地工作流文件的存在不能代替远端成功发布记录。
+
+发布先创建草稿，再上传完整资产并公开。上传失败后可重跑任务，复用同标签草稿；已公开版本拒绝覆盖，修复应发布更高版本。
+
+## 验收范围与限制
+
+Windows 桌面验收使用隔离临时用户目录；打包验收先把完整应用复制到源码目录以外，再从系统临时工作目录启动，避免借用仓库依赖。也可用 `node scripts/toolchain.mjs desktop-smoke --executable 'H:\specflow\SpecFlow.exe'` 验收实际安装目录。覆盖：
 
 1. 随包运行时启动、渲染隔离、未认证接口拒绝访问。
 2. 第二实例退出，保留原窗口和服务。
-3. 仓库选择 IPC 与界面填写。
-4. 完整 CSV 工程链：文档复核与接纳、真实代码修改、Node 测试、Git 接纳。
-5. 从正式源码构建的随包 Maka Host 能启动并安装工作区扩展，继续拒绝遗留开发快照。
-6. 记录保存 IPC，实际生成可解析的工程 JSON。
-7. 正常退出后监听端口关闭，重启保留已接纳工作项。
-8. 桌面主进程被强制结束后，父进程存活检测关闭工程服务。
+3. 仓库选择、记录导出 IPC 与真实文件写入。
+4. CSV 完整工程链：文档复核与接纳、真实代码修改、Node 测试、Git 接纳。
+5. 正式源码构建的 Maka Host 启动并安装工作区扩展，拒绝遗留开发快照。
+6. 正常退出关闭端口，重启保留工作项；主进程被强制结束后工程服务退出。
 
-选择目录与保存路径在自动测试中用固定选择结果替代人工点击，其余窗口、IPC、文件写入、进程、Maka Host 和工程链均实际执行。真实云端供应商验证仍按约定后补。
+选择目录与保存路径在自动测试中使用固定选择结果，其余窗口、IPC、进程、Maka Host 和工程链均实际执行。验收输出为 `release/desktop-smoke-win32-x64.json`，截图为 `release/desktop-win32-x64.png`。更多需求、澄清和空间切换验收见 [前端交付记录](frontend-workbench-delivery.md)。
 
-验收输出位于 `release/desktop-smoke-win32-x64.json`，截图为 `release/desktop-win32-x64.png`。源码内置版的 22 项测试全部通过，包括真实 Host、本地协议、正式来源验证和生产依赖闭包。SpecFlow 工程服务的生产依赖审计无已知漏洞；Maka 正式源码锁定的生产依赖中，6 个包存在当前审计告警（4 高、2 中），记录见 `maka-dependency-audit.json`，未自动改写官方锁文件。macOS 尚未在真实系统执行；CI 配置不能代替通过记录。
+2026-10-15 本机验证结果：类型检查通过，137 项全量回归与补充的 13 项更新状态测试通过；Windows 安装包构建成功，打包应用的 11 类验收通过，其中包含原生更新菜单、正式 Maka Host、完整 CSV 工程流程及退出恢复。`latest.yml` 中的 SHA-512、文件大小与实际安装包一致，独立 SHA-256 文件为 `release/SpecFlow-0.1.0-win-x64.exe.sha256`。
 
-Electron 44 的测试启动器与实际桌面主进程具有不同 PID。崩溃检查通过主进程上下文读取 PID，再强制结束该进程，避免把结束启动器误当作应用崩溃。
+安装目录回归通过 `npm run desktop:smoke:installer-directory` 执行，真实 NSIS 编译运行覆盖 17 种路径与 5 种静默 `/D=` 入口。原生测试向导还验证了根目录即时回显、继续输入自定义目录、浏览取消保留原路径及中文文件夹；测试向导仅写隔离报告，不安装应用。目录规则也在 Windows CI 中检查。
+
+更新状态测试使用模拟更新器验证显式下载与安装门槛、并发去重、失败重试、关闭后台的顺序和发布元数据处理；**首次真实 Release 发布、跨版本下载安装、Windows 正式签名、macOS 签名与公证及原生升级仍需在发布环境验收**。未发布 Release 时，更新检查不能用于证明升级链已经在线可用。
+
+真实云端供应商的质量、费用元数据和长任务恢复仍按约定后补。Maka 官方源码锁定的生产依赖审计记录见 [依赖审计](maka-dependency-audit.json)，不会为消除告警自动改写官方锁文件。
+
+后续排查发现旧测试虽切换工作目录，仍会沿应用文件的父目录借用仓库依赖。现已修复安装包遗漏后端依赖与 Windows npm 的问题，并增加包内依赖解析校验、源码目录外启动及实际安装目录验收，详见 [Windows 启动失败修复记录](desktop-startup-repair.md)。
 
 ## Claude Code 复核入口
 
-新增重点：`apps/desktop/main.ts`、`preload.ts`、`scripts/desktop.mjs`、`desktop-smoke.mjs`、`electron-builder.yml`、CI 配置，以及 `apps/server/src/main.ts` 的退出逻辑。
+桌面与更新实现重点为 `apps/desktop/main.ts`、`apps/desktop/updates.ts`、`apps/desktop/update-menu.ts`、`apps/desktop/preload.ts`、`scripts/desktop.mjs`、`scripts/desktop-smoke.mjs`、`scripts/desktop-release.mjs`、`electron-builder.yml`、`config/desktop-release.json`、`.github/workflows/desktop.yml`，以及 `apps/server/src/main.ts` 的退出逻辑。
 
-复核 IPC 调用来源、动态端口认证、安装资源只读、运行时完整性、后台生命周期、macOS 原生模块与签名、公证和升级后的数据保留。本次未调用外部 Claude Code。
+复核应检查 IPC 来源、动态端口认证、安装资源只读、运行时完整性、工程服务退出、更新状态与确认流程、安装退出与服务清理、发布源固定、macOS 架构元数据合并、签名与公证要求及更新后数据保留。验收记录应区分本地模拟、原生运行和真实线上发布，不以配置存在代替通过记录。

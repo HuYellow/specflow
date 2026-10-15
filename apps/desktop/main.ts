@@ -5,6 +5,7 @@ import { randomBytes } from 'node:crypto';
 import { dirname, join, resolve, delimiter } from 'node:path';
 import { MAKA_VERSION } from '../../packages/maka-adapter/release-policy.ts';
 import { desktopViewSearch, emptyDesktopViewState, parseDesktopViewState, updateDesktopViewState, validViewItemId } from './view-state.ts';
+import { createUpdateMenu } from './update-menu.ts';
 
 app.setName('SpecFlow');
 app.setAppUserModelId('dev.specflow.desktop');
@@ -13,6 +14,8 @@ let window: BrowserWindow | undefined;
 let server: ChildProcess | undefined;
 let origin = '';
 let quitting = false;
+let replacingWindow = false;
+let updateMenu: ReturnType<typeof createUpdateMenu> | undefined;
 const secret = randomBytes(32).toString('hex');
 const dataDirectory = resolve(process.env.SPECFLOW_DATA_DIR || join(app.getPath('userData'), 'engineering'));
 const logsDirectory = join(app.getPath('userData'), 'logs');
@@ -124,7 +127,10 @@ function configureMenus() {
     ] },
     { label: '编辑', submenu: [{ role: 'undo' }, { role: 'redo' }, { type: 'separator' }, { role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { role: 'selectAll' }] },
     { label: '视图', submenu: [{ role: 'reload' }, { role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' }, { role: 'togglefullscreen' }] },
-    { label: '帮助', submenu: [{ label: '关于 SpecFlow', click: () => { void dialog.showMessageBox({ type: 'info', title: 'SpecFlow', message: `SpecFlow ${app.getVersion()}`, detail: '软件工程流程工作台 · Maka Runtime Host\n真实模型连接可在工程设置中添加。' }); } }] },
+    { label: '帮助', submenu: [
+      ...(updateMenu?.items || []), { type: 'separator' },
+      { label: '关于 SpecFlow', click: () => { void dialog.showMessageBox({ type: 'info', title: 'SpecFlow', message: `SpecFlow ${app.getVersion()}`, detail: `软件工程流程工作台 · Maka Runtime Host\n${updateMenu?.status() || ''}\n真实模型连接可在工程设置中添加。` }); } },
+    ] },
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
@@ -137,9 +143,32 @@ else {
     event.preventDefault(); quitting = true;
     void stopServer().finally(() => app.quit());
   });
-  app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
+  app.on('will-quit', () => updateMenu?.dispose());
+  app.on('window-all-closed', () => { if (process.platform !== 'darwin' && !replacingWindow) app.quit(); });
   app.on('activate', () => { if (origin && !window && !quitting) createWindow(); });
   void app.whenReady().then(async () => {
+    updateMenu = createUpdateMenu({
+      window: () => window, log, isQuitting: () => quitting,
+      prepareInstall: async () => { quitting = true; log('Stopping backend before update installation'); await stopServer(); },
+      recoverFromFailedInstall: async () => {
+        log('Update installation failed; restarting backend');
+        origin = ''; server = undefined;
+        try {
+          origin = await startServer();
+          // Recreate the window so its request-header filter uses the new service origin.
+          replacingWindow = true;
+          try {
+            if (window && !window.isDestroyed()) window.destroy();
+            createWindow();
+          } finally { replacingWindow = false; }
+          quitting = false;
+        } catch (error) {
+          log(`Update recovery failed: ${String(error)}`);
+          dialog.showErrorBox('SpecFlow 更新失败', `请重新打开应用，或使用新版安装包覆盖安装。工程数据已保留。诊断日志：${logPath}`);
+          app.quit();
+        }
+      },
+    });
     configureMenus();
     ipcMain.handle('specflow:pick-repository', async event => { trustedSender(event); const selected = await dialog.showOpenDialog(window!, { title: '选择 Git 仓库', properties: ['openDirectory'] }); return selected.canceled ? null : selected.filePaths[0]; });
     ipcMain.handle('specflow:open-data', async event => { trustedSender(event); await shell.openPath(dataDirectory); });
@@ -165,6 +194,7 @@ else {
       writeFileSync(save.filePath, await response.text(), 'utf8');
     });
     origin = await startServer(); createWindow();
+    updateMenu.start();
     log(`Desktop started ${app.getVersion()} ${process.platform}/${process.arch}`);
   }).catch(error => { log(String(error)); dialog.showErrorBox('SpecFlow 启动失败', String(error.message || error)); app.quit(); });
 }

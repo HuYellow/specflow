@@ -5,6 +5,7 @@ import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 import { build } from 'esbuild';
+import { loadDesktopRelease, desktopPublishConfiguration, desktopReleaseCapabilities, verifyDesktopReleaseTag } from './desktop-release.mjs';
 
 const root = resolve(import.meta.dirname, '..');
 const require = createRequire(import.meta.url);
@@ -15,6 +16,9 @@ const runtimeVersion = '24.19.0';
 const staging = join(root, '.tools/desktop');
 const resources = join(staging, 'resources');
 const runtime = join(staging, 'runtime');
+const packageArgs = process.argv.slice(3);
+if (packageArgs.some(argument => !['--win', '--mac', '--x64', '--arm64', '--dir'].includes(argument))) throw new Error('Desktop package arguments are limited to --win, --mac, --x64, --arm64 and --dir. Publishing is handled only by the release workflow.');
+if ((packageArgs.includes('--win') && packageArgs.includes('--mac')) || (packageArgs.includes('--x64') && packageArgs.includes('--arm64'))) throw new Error('Build one desktop platform and architecture per invocation.');
 function run(binary, args, cwd = root, extraEnv = {}) {
   return new Promise((done, reject) => {
     const child = spawn(binary, args, { cwd, env: { ...process.env, ...extraEnv }, stdio: 'inherit', windowsHide: true });
@@ -50,6 +54,17 @@ async function prepareRuntime() {
 }
 async function prepare() {
   if (platform !== process.platform || arch !== process.arch) throw new Error('Desktop packages must be built on the matching Windows/macOS architecture so native files, executable modes and signatures are preserved. Use .github/workflows/desktop.yml for all three targets.');
+  const release = await loadDesktopRelease();
+  const { version } = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'));
+  verifyDesktopReleaseTag(release, version, process.env.GITHUB_REF_TYPE === 'tag' ? process.env.GITHUB_REF_NAME : undefined, process.env.GITHUB_REF_TYPE === 'tag' ? process.env.GITHUB_REPOSITORY : undefined);
+  const capabilities = desktopReleaseCapabilities(release, platform);
+  if (platform === 'darwin' && process.env.SPECFLOW_REQUIRE_SIGNED_RELEASE === 'true' && !capabilities.automaticUpdates) throw new Error('Public macOS releases require Developer ID signing and notarization credentials so installed applications can update.');
+  const { verifyMakaRelease, MAKA_RELEASE_AVAILABLE, MAKA_RELEASE } = await import('../packages/maka-adapter/release-policy.ts');
+  if (!MAKA_RELEASE_AVAILABLE) throw new Error(`Cannot package without an approved official Maka release: ${MAKA_RELEASE.reason}`);
+  const maka = join(root, '.tools/maka/node_modules/maka-agent');
+  if (!existsSync(join(maka, 'package.json'))) throw new Error('Run npm run maka:setup first.');
+  const verifiedMaka = await verifyMakaRelease(maka);
+  if (MAKA_RELEASE.distribution === 'source' && (verifiedMaka.provenance.build.platform !== platform || verifiedMaka.provenance.build.arch !== arch)) throw new Error('Rebuild the approved Maka source runtime on this desktop platform and architecture with npm run maka:setup.');
   await run(process.execPath, ['scripts/toolchain.mjs', 'build']);
   await build({ entryPoints: ['apps/desktop/main.ts'], outfile: 'dist/desktop/main.cjs', bundle: true, platform: 'node', format: 'cjs', external: ['electron'], target: 'node24' });
   await build({ entryPoints: ['apps/desktop/preload.ts'], outfile: 'dist/desktop/preload.cjs', bundle: true, platform: 'node', format: 'cjs', external: ['electron'], target: 'node24' });
@@ -59,14 +74,15 @@ async function prepare() {
   await cp(join(root, 'dist/web'), join(resources, 'web'), { recursive: true });
   await cp(join(root, '.tools/workspace-plugin'), join(resources, 'workspace-plugin'), { recursive: true });
   await cp(join(root, 'plugins/specflow-workspace/maka.extension.json'), join(resources, 'workspace-plugin/maka.extension.json'));
-  const { verifyMakaRelease, MAKA_RELEASE_AVAILABLE, MAKA_RELEASE } = await import('../packages/maka-adapter/release-policy.ts');
-  if (MAKA_RELEASE_AVAILABLE) {
-    const maka = join(root, '.tools/maka/node_modules/maka-agent');
-    if (!existsSync(join(maka, 'package.json'))) throw new Error('Run npm run maka:setup first.');
-    await verifyMakaRelease(maka);
-    await cp(maka, join(resources, 'maka'), { recursive: true });
-  } else console.log(`Maka is omitted: ${MAKA_RELEASE.reason}`);
+  await cp(maka, join(resources, 'maka'), { recursive: true });
   await writeFile(join(resources, 'maka-release-policy.json'), JSON.stringify(MAKA_RELEASE, null, 2));
+  await writeFile(join(resources, 'desktop-release.json'), JSON.stringify(capabilities, null, 2));
+  // The same reviewed release source is embedded in the app and updater metadata.
+  await writeFile(join(staging, 'electron-builder.json'), JSON.stringify({
+    extends: join(root, 'electron-builder.yml'),
+    publish: desktopPublishConfiguration(release),
+    ...(platform === 'darwin' ? { forceCodeSigning: capabilities.automaticUpdates, mac: { notarize: capabilities.automaticUpdates } } : {}),
+  }, null, 2));
   // Runtime deps use the workspace lock; Electron/build tools stay outside the shipped backend.
   await cp(join(root, 'package.json'), join(resources, 'package.json'));
   await cp(join(root, 'package-lock.json'), join(resources, 'package-lock.json'));
@@ -74,7 +90,7 @@ async function prepare() {
   if (!npm) throw new Error('Run desktop commands through npm.');
   await run(process.execPath, [npm, 'ci', '--omit=dev', '--ignore-scripts', '--prefix', resources, '--registry=https://registry.npmjs.org']);
   await rm(join(resources, 'package-lock.json'));
-  if (platform === 'win32' && MAKA_RELEASE_AVAILABLE) {
+  if (platform === 'win32') {
     // Patch during packaging so installed Program Files / macOS app resources stay immutable.
     const { applyWindowsCompatibility } = await import('../packages/maka-adapter/compat.ts');
     await applyWindowsCompatibility(join(resources, 'maka'));
@@ -96,11 +112,10 @@ try {
     await run(require('electron'), ['.']);
   } else if (command === 'package') {
     await prepare();
-    const args = process.argv.slice(3);
     const electronPackage = JSON.parse(await readFile(require.resolve('electron/package.json'), 'utf8'));
     const localElectron = join(dirname(require.resolve('electron/package.json')), 'dist');
     const localVersion = await readFile(join(localElectron, 'version'), 'utf8').catch(() => '');
     const localDist = localVersion.trim() === electronPackage.version ? ['--config.electronDist', localElectron] : [];
-    await run(process.execPath, [require.resolve('electron-builder/cli.js'), '--publish', 'never', ...localDist, ...(args.length ? args : [platform === 'darwin' ? '--mac' : '--win', `--${arch}`])]);
+    await run(process.execPath, [require.resolve('electron-builder/cli.js'), '--config', join(staging, 'electron-builder.json'), '--publish', 'never', ...localDist, ...(packageArgs.length ? packageArgs : [platform === 'darwin' ? '--mac' : '--win', `--${arch}`])]);
   } else throw new Error(`Unknown desktop command: ${command}`);
 } catch (error) { console.error(error); process.exitCode = 1; }
