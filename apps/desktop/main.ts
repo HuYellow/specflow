@@ -1,9 +1,10 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, shell, type IpcMainInvokeEvent } from 'electron';
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { dirname, join, resolve, delimiter } from 'node:path';
 import { MAKA_VERSION } from '../../packages/maka-adapter/release-policy.ts';
+import { desktopViewSearch, emptyDesktopViewState, parseDesktopViewState, updateDesktopViewState, validViewItemId } from './view-state.ts';
 
 app.setName('SpecFlow');
 app.setAppUserModelId('dev.specflow.desktop');
@@ -23,6 +24,13 @@ const runtimeRoot = app.isPackaged ? join(process.resourcesPath, 'runtime') : re
 const nodeBinary = join(runtimeRoot, process.platform === 'win32' ? 'node.exe' : 'bin/node');
 const nodeBin = dirname(nodeBinary);
 const npmCli = join(runtimeRoot, process.platform === 'win32' ? 'node_modules/npm/bin/npm-cli.js' : 'lib/node_modules/npm/bin/npm-cli.js');
+const viewStatePath = join(app.getPath('userData'), 'view-state.json');
+function readViewState() {
+  try {
+    if (statSync(viewStatePath).size > 256 * 1024) return emptyDesktopViewState();
+    return parseDesktopViewState(JSON.parse(readFileSync(viewStatePath, 'utf8')));
+  } catch { return emptyDesktopViewState(); }
+}
 
 function trustedSender(event: IpcMainInvokeEvent) {
   if (!window || event.sender !== window.webContents || !event.senderFrame || event.senderFrame !== window.webContents.mainFrame || new URL(event.senderFrame.url).origin !== origin) throw new Error('桌面接口不接受此调用来源');
@@ -104,7 +112,7 @@ function createWindow() {
   });
   window.on('closed', () => { window = undefined; });
   window.once('ready-to-show', () => window?.show());
-  void window.loadURL(origin);
+  void window.loadURL(`${origin}${desktopViewSearch(readViewState().last)}`);
 }
 function configureMenus() {
   const template: Electron.MenuItemConstructorOptions[] = [
@@ -135,6 +143,18 @@ else {
     configureMenus();
     ipcMain.handle('specflow:pick-repository', async event => { trustedSender(event); const selected = await dialog.showOpenDialog(window!, { title: '选择 Git 仓库', properties: ['openDirectory'] }); return selected.canceled ? null : selected.filePaths[0]; });
     ipcMain.handle('specflow:open-data', async event => { trustedSender(event); await shell.openPath(dataDirectory); });
+    ipcMain.handle('specflow:read-view', (event, itemId: unknown) => {
+      trustedSender(event);
+      if (!validViewItemId(itemId)) throw new Error('无效的工作项视图标识');
+      return readViewState().items.find(view => view.item === itemId) || null;
+    });
+    ipcMain.handle('specflow:save-view', (event, value: unknown) => {
+      trustedSender(event);
+      const state = updateDesktopViewState(readViewState(), value);
+      const temporaryPath = `${viewStatePath}.tmp`;
+      writeFileSync(temporaryPath, JSON.stringify(state), { encoding: 'utf8', mode: 0o600 });
+      renameSync(temporaryPath, viewStatePath);
+    });
     ipcMain.handle('specflow:export', async (event, itemId: unknown) => {
       trustedSender(event);
       if (typeof itemId !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/.test(itemId)) throw new Error('无效的工作项标识');

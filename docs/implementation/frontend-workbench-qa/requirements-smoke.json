@@ -1,0 +1,16 @@
+{
+  "packaged": false,
+  "platform": "win32",
+  "testedAt": "2026-10-15T10:54:23.300Z",
+  "userData": "C:\\Users\\huyel\\AppData\\Local\\Temp\\specflow-requirements-test-RfdZIY",
+  "checks": [
+    "readiness read failure is explained with a retry action; removing the failure and retrying restores dispatch readiness",
+    "desktop: original work-item text migrates; UTF-8 file upload and immutable source save",
+    "reverting an edit removes the draft and restores execution readiness",
+    "draft survives navigation/reload; unsaved requirements block execution; concurrent save preserves draft and requires comparison",
+    "repository import is snapshotted; UI dispatch sends saved document body and revision to the execution backend",
+    "changing saved source visibly invalidates the analysis and offers a new attempt",
+    "new work item accepts a requirements document without a separate request text",
+    "desktop layouts at 1440/1000px: no horizontal overflow or renderer errors"
+  ]
+}

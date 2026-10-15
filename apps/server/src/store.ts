@@ -13,6 +13,8 @@ export class Store {
       CREATE TABLE IF NOT EXISTS entities(kind TEXT NOT NULL,id TEXT NOT NULL,revision INTEGER NOT NULL,data TEXT NOT NULL,PRIMARY KEY(kind,id));
       CREATE TABLE IF NOT EXISTS events(seq INTEGER PRIMARY KEY AUTOINCREMENT,entityId TEXT NOT NULL,kind TEXT NOT NULL,payload TEXT NOT NULL,createdAt TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS requests(key TEXT PRIMARY KEY,operation TEXT NOT NULL,result TEXT NOT NULL);`);
+    const columns = this.db.prepare('PRAGMA table_info(events)').all() as { name: string }[];
+    for (const name of ['workItemId', 'projectId']) if (!columns.some(column => column.name === name)) this.db.exec(`ALTER TABLE events ADD COLUMN ${name} TEXT`);
   }
   create<K extends Kind>(kind: K, data: Omit<Entities[K], keyof Entity>): Entities[K] {
     const item = { ...data, id: id(), revision: 1, createdAt: now(), updatedAt: now() } as Entities[K];
@@ -45,8 +47,31 @@ export class Store {
     catch (error) { this.db.exec('ROLLBACK'); throw error; }
     finally { this.depth--; }
   }
-  emit(entityId: string, kind: string, payload: unknown) { this.db.prepare('INSERT INTO events(entityId,kind,payload,createdAt) VALUES(?,?,?,?)').run(entityId, kind, JSON.stringify(payload), now()); }
-  events(after = 0) { return (this.db.prepare('SELECT * FROM events WHERE seq>? ORDER BY seq LIMIT 200').all(after) as { seq: number; entityId: string; kind: string; payload: string; createdAt: string }[]).map(x => ({ ...x, payload: JSON.parse(x.payload) })); }
+  private eventScope(entityId: string, visited = new Set<string>()): { workItemId?: string; projectId?: string } {
+    if (visited.has(entityId)) return {}; visited.add(entityId);
+    const row = this.db.prepare('SELECT kind,data FROM entities WHERE id=? LIMIT 1').get(entityId) as { kind: Kind; data: string } | undefined;
+    if (!row) return {};
+    const entity = JSON.parse(row.data);
+    if (row.kind === 'projects') return { projectId: entityId };
+    if (row.kind === 'workItems') return { workItemId: entityId, projectId: entity.projectId };
+    if (entity.workItemId) return { ...this.eventScope(entity.workItemId, visited), workItemId: entity.workItemId };
+    for (const key of ['workflowRunId', 'nodeRunId', 'attemptId', 'artifactId', 'artifactRevisionId', 'candidateId', 'sessionId']) if (entity[key]) return this.eventScope(entity[key], visited);
+    return {};
+  }
+  emit(entityId: string, kind: string, payload: unknown) {
+    const scope = this.eventScope(entityId);
+    this.db.prepare('INSERT INTO events(entityId,kind,payload,createdAt,workItemId,projectId) VALUES(?,?,?,?,?,?)').run(entityId, kind, JSON.stringify(payload), now(), scope.workItemId || null, scope.projectId || null);
+  }
+  eventCursor(after: number) {
+    const bounds = this.db.prepare('SELECT MIN(seq) AS first,MAX(seq) AS last FROM events').get() as { first: number | null; last: number | null };
+    const latestSeq = bounds.last || 0;
+    const exists = after === 0 ? bounds.first === null || bounds.first === 1 : !!this.db.prepare('SELECT seq FROM events WHERE seq=?').get(after);
+    return { recoverable: exists && after <= latestSeq, latestSeq };
+  }
+  events(after = 0) {
+    if (!Number.isSafeInteger(after) || after < 0) throw new DomainError('EVENT_CURSOR_INVALID', '事件游标必须为非负安全整数', 400);
+    return (this.db.prepare('SELECT * FROM events WHERE seq>? ORDER BY seq LIMIT 200').all(after) as { seq: number; entityId: string; kind: string; payload: string; createdAt: string; workItemId: string | null; projectId: string | null }[]).map(x => ({ ...x, workItemId: x.workItemId || undefined, projectId: x.projectId || undefined, payload: JSON.parse(x.payload) }));
+  }
   receipt(key: string, operation: string): unknown | undefined {
     const row = this.db.prepare('SELECT operation,result FROM requests WHERE key=?').get(key) as { operation: string; result: string } | undefined;
     if (!row) return undefined;

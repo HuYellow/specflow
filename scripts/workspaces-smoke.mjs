@@ -78,6 +78,7 @@ try {
   await artifacts.getByRole('button', { name: '需求规格', exact: true }).click();
   await expect(page.getByRole('article', { name: '人类简报', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'AI 执行文档', exact: true }).click();
+  await page.getByRole('button', { name: '编辑原文', exact: true }).click();
   await page.getByRole('textbox', { name: '文档正文' }).waitFor();
   assert.ok((await page.getByRole('textbox', { name: '文档正文' }).inputValue()).includes('A-SPEC-101'));
   report.checks.push('workspace chooser scopes work items; sidebar shows only existing artifacts of the selected item, including custom artifacts');
@@ -100,11 +101,12 @@ try {
 
   let release; const hold = new Promise(done => { release = done; });
   let intercepted; const requested = new Promise(done => { intercepted = done; });
-  const pattern = `**/api/work-items/${fixtures.a1.id}`;
+  const snapshotPath = `/api/work-items/${fixtures.a1.id}`;
+  const pattern = url => url.pathname === snapshotPath;
   await page.route(pattern, async route => { intercepted(); await hold; await route.continue(); });
   await items.getByRole('button', { name: 'A 的导入功能', exact: true }).click(); await requested;
   await selectWorkspace(fixtures.b.id); await expect(page.getByRole('heading', { name: 'B 的接口开发', exact: true })).toBeVisible();
-  const lateResponse = page.waitForResponse(response => response.url().endsWith(`/api/work-items/${fixtures.a1.id}`));
+  const lateResponse = page.waitForResponse(response => new URL(response.url()).pathname === snapshotPath);
   release(); await page.unrouteAll({ behavior: 'wait' }); await lateResponse; await page.waitForTimeout(400);
   await expect(chooser).toHaveAttribute('data-current-workspace', fixtures.b.id); await expect(page.getByRole('heading', { name: 'B 的接口开发', exact: true })).toBeVisible(); await expect(artifacts.getByRole('button', { name: '任务拆解', exact: true })).toBeVisible(); await expect(artifacts.getByRole('button', { name: '需求规格', exact: true })).toHaveCount(0);
   report.checks.push('late response from the previous workspace cannot overwrite the current workspace or its artifacts');
@@ -120,6 +122,24 @@ try {
   await page.reload(); await expect(chooser).toHaveAttribute('data-current-workspace', fixtures.empty.id); await expect(page.getByRole('heading', { name: '空空间的第一个工作项', exact: true })).toBeVisible();
   await selectWorkspace(fixtures.a.id); await expect(page.getByRole('heading', { name: 'A 的导入功能', exact: true })).toBeVisible();
   for (const width of [1440, 1000]) { await page.setViewportSize({ width, height: 940 }); assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)); }
+  try {
+    await app.evaluate(({ BrowserWindow }) => { const window = BrowserWindow.getAllWindows()[0]; if (!window) throw new Error('Desktop window missing during zoom validation'); window.webContents.setZoomFactor(2); });
+    await page.getByRole('tab', { name: '开发流程', exact: true }).click();
+    const primaryAction = page.locator('.flow-task-bar .primary-button');
+    await expect(primaryAction).toBeVisible();
+    await page.evaluate(() => {
+      const directory = document.querySelector('.flow-directory-heading');
+      if (!directory) throw new Error('Flow directory missing during zoom validation');
+      window.scrollTo(0, directory.getBoundingClientRect().top + window.scrollY);
+    });
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+    await expect(primaryAction).toBeInViewport({ ratio: 1 });
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'Horizontal overflow at real Electron 200% zoom');
+    assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.getZoomFactor()), 2);
+    report.checks.push('real Electron 200% zoom: scrolled workflow keeps its full primary action in the viewport without horizontal overflow');
+  } finally {
+    await app.evaluate(({ BrowserWindow }) => { const window = BrowserWindow.getAllWindows()[0]; if (window) window.webContents.setZoomFactor(1); });
+  }
   await page.screenshot({ path: join(root, `release/workspaces-${packaged ? 'packaged' : 'dev'}.png`), fullPage: true }); assert.deepEqual(errors, []);
   report.checks.push('reload retains workspace selection; desktop widths have no horizontal overflow or renderer errors');
   await writeFile(join(root, `release/workspaces-smoke-${packaged ? 'packaged' : 'dev'}.json`), JSON.stringify(report, null, 2)); console.log(JSON.stringify(report, null, 2));

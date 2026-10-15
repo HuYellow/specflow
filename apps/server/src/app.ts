@@ -8,6 +8,7 @@ import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { DomainError, compileWorkflow, hash, type WorkflowDefinition } from '../../../packages/domain/index.ts';
 import { EngineeringService } from './service.ts';
 import { MakaBackend } from '../../../packages/maka-adapter/index.ts';
+import { UserCodeReview } from './user-review.ts';
 
 const target = z.object({ backend: z.enum(['maka', 'sandbox']), connectionId: z.string().min(1), connectionSlug: z.string().min(1), model: z.string().min(1), rootId: z.string().optional() });
 const command = z.object({ id: z.string().regex(/^[a-z][a-z0-9_-]*$/), executable: z.string().min(1), args: z.array(z.string()), timeoutMs: z.number().int().min(100).max(600000) });
@@ -76,11 +77,20 @@ export async function createApp(service: EngineeringService, options: { staticRo
   commandRoute('/api/projects/:id/configure', async request => {
     const body = z.object({ expectedRevision: z.number().int().positive(), rules: z.string(), commands: z.array(command).min(1), defaults: z.object({ analyst: target.optional(), architect: target.optional(), developer: target.optional(), reviewer: target.optional() }) }).parse(request.body);
     const { expectedRevision, ...patch } = body;
+    service.assertProjectWritable(param(request));
     service.store.update('projects', param(request), patch, expectedRevision);
     await service.guidance.refresh(param(request)); return service.store.get('projects', param(request));
   });
   commandRoute('/api/work-items', async request => { const body = z.object({ projectId: z.string(), name: z.string().min(1), request: z.string().default(''), documents: z.array(requirementDocument).max(20).default([]), kind: z.enum(['feature', 'bug', 'refactor']).default('feature') }).parse(request.body); return service.createWorkItem(body.projectId, body.name, body.request, body.kind, body.documents); });
-  app.get('/api/work-items/:id', request => service.snapshot(param(request)));
+  app.get('/api/work-items/:id', request => {
+    const query = z.object({ history: z.enum(['full', 'summary']).optional() }).parse(request.query);
+    return service.snapshot(param(request), query);
+  });
+  app.get('/api/work-items/:id/attempts', request => {
+    const query = z.object({ offset: z.coerce.number().int().min(0).default(0), limit: z.coerce.number().int().min(1).max(100).default(50), nodeRunId: z.string().min(1).optional(), state: z.enum(['pending', 'starting', 'running', 'waiting_interaction', 'completed', 'failed', 'cancelled', 'reconciling']).optional() }).parse(request.query);
+    return service.attemptPage(param(request), query.offset, query.limit, query);
+  });
+  app.get('/api/attempts/:id', request => service.attemptDetail(param(request)));
   commandRoute('/api/work-items/:id/requirements', request => {
     const body = z.object({ expectedRevisionId: z.string().min(1), request: z.string(), documents: z.array(requirementDocument).max(20) }).parse(request.body);
     return service.saveRequirements(param(request), body.expectedRevisionId, body.request, body.documents);
@@ -136,14 +146,37 @@ export async function createApp(service: EngineeringService, options: { staticRo
   commandRoute('/api/comments', request => { const body = z.object({ artifactRevisionId: z.string(), author: z.string().min(1), body: z.string().min(1), anchor: z.string().default('') }).parse(request.body); service.store.get('artifactRevisions', body.artifactRevisionId); return service.store.create('comments', body); });
   commandRoute('/api/findings/:id/resolve', request => { const body = z.object({ status: z.enum(['resolved', 'waived']), reason: z.string(), evidenceId: z.string().optional() }).parse(request.body); return service.resolveFinding(param(request), body.status, body.reason, body.evidenceId); });
   app.get('/api/candidates/:id/diff', async request => { const c = service.store.get('candidates', param(request)); return { diff: await service.workspaces.diff(c.workspace, c.baseCommit), candidate: c }; });
+  const userReview = new UserCodeReview((workspace, args) => service.workspaces.git(workspace, args));
+  app.get('/api/candidates/:id/review-diff', async (request, reply) => {
+    const candidate = service.store.get('candidates', param(request));
+    return reply.header('Cache-Control', 'no-store').send(await userReview.diff(candidate.id, candidate.workspace, candidate.baseCommit));
+  });
+  app.get('/api/candidates/:id/review-file', async (request, reply) => {
+    const query = z.object({ path: z.string().min(1).max(4000), side: z.enum(['candidate', 'baseline']).default('candidate'), offset: z.coerce.number().int().min(0).max(Number.MAX_SAFE_INTEGER).default(0), limit: z.coerce.number().int().min(4).max(256 * 1024).default(64 * 1024) }).parse(request.query);
+    const candidate = service.store.get('candidates', param(request));
+    return reply.header('Cache-Control', 'no-store').send(await userReview.chunk(candidate.workspace, candidate.baseCommit, query.path, query.side, query.offset, query.limit));
+  });
+  app.get('/api/code-candidates/:id/acceptance-precheck', async (request, reply) => reply.header('Cache-Control', 'no-store').send(await service.acceptancePrecheck(param(request))));
   commandRoute('/api/candidates/:id/verify', async request => service.verifyCandidate(param(request)));
-  commandRoute('/api/code-candidates/:id/accept', request => { const c = service.store.get('candidates', param(request)); return service.acceptCode(c.workItemId, 'local'); });
+  commandRoute('/api/code-candidates/:id/accept', request => { const c = service.store.get('candidates', param(request)); return service.acceptCode(c.workItemId, 'local', c.id); });
   app.get('/api/events', (request, reply) => {
-    const after = Number((request.query as any).after || 0);
-    if (request.headers.accept !== 'text/event-stream') return service.store.events(after);
+    const rawCursor = request.headers['last-event-id'] ?? (request.query as any).after ?? '0';
+    if (typeof rawCursor !== 'string' || !/^(0|[1-9]\d*)$/.test(rawCursor) || !Number.isSafeInteger(Number(rawCursor))) throw new DomainError('EVENT_CURSOR_INVALID', '事件游标必须为非负安全整数', 400);
+    const after = Number(rawCursor), state = service.store.eventCursor(after);
+    if (request.headers.accept !== 'text/event-stream') {
+      if (!state.recoverable) return reply.code(409).send({ code: 'EVENT_RESYNC_REQUIRED', message: '事件游标不可恢复，请重新同步快照', latestSeq: state.latestSeq });
+      return service.store.events(after);
+    }
     reply.hijack(); reply.raw.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
+    // An idle stream must still open immediately when there is nothing to replay.
+    reply.raw.flushHeaders();
+    if (!state.recoverable) { reply.raw.end(`event: resync\ndata: ${JSON.stringify({ reason: 'cursor-unavailable', latestSeq: state.latestSeq })}\n\n`); return; }
     let cursor = after;
-    const send = () => { for (const event of service.store.events(cursor)) { reply.raw.write(`id: ${event.seq}\ndata: ${JSON.stringify(event)}\n\n`); cursor = event.seq; } };
+    const send = () => {
+      // Drain all batches immediately; a reconnect must not wait 700ms for every 200 records.
+      let batch;
+      do { batch = service.store.events(cursor); for (const event of batch) { reply.raw.write(`id: ${event.seq}\ndata: ${JSON.stringify(event)}\n\n`); cursor = event.seq; } } while (batch.length === 200);
+    };
     send(); const timer = setInterval(send, 700); request.raw.on('close', () => clearInterval(timer));
   });
   if (options.staticRoot && existsSync(join(options.staticRoot, 'index.html'))) {

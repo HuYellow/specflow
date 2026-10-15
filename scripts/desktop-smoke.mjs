@@ -120,12 +120,27 @@ try {
   }
   const exportPath = join(userData, 'evidence.json');
   await application.evaluate(({ dialog }, path) => { dialog.showSaveDialog = async () => ({ canceled: false, filePath: path }); }, exportPath);
+  await page.locator('summary[aria-label="更多工作项操作"]').click();
   await page.getByRole('button', { name: '导出工程记录' }).click();
   await page.waitForTimeout(500);
   const exported = JSON.parse(await readFile(exportPath, 'utf8'));
   assert.equal(exported.format, 'specflow-evidence-v1');
   assert.equal(exported.item.status, 'accepted');
   record.checks.push('native save dialog bridge and evidence export (dialog selection stubbed)');
+  await page.locator('summary[aria-label="更多工作项操作"]').click();
+  await page.getByRole('button', { name: '查看交付证据', exact: true }).waitFor();
+  assert.equal(await page.locator('.flow-conditions').count(), 0);
+  await page.getByRole('tab', { name: /^文档产物/ }).click();
+  assert.equal(await page.getByRole('button', { name: '导入文档', exact: true }).isDisabled(), true);
+  assert.equal(await page.getByRole('textbox', { name: '评论内容', exact: true }).getAttribute('readonly'), '');
+  await page.getByRole('button', { name: 'AI 执行文档', exact: true }).click();
+  await page.getByRole('button', { name: '查看原文', exact: true }).click();
+  assert.equal(await page.getByRole('textbox', { name: '文档正文', exact: true }).getAttribute('readonly'), '');
+  await page.getByRole('tab', { name: '代码与验证', exact: true }).click();
+  await page.getByRole('status', { name: '代码已接纳', exact: true }).waitFor();
+  assert.equal(await page.getByRole('button', { name: '重新验证', exact: true }).isDisabled(), true);
+  await page.getByRole('tab', { name: '开发流程', exact: true }).click();
+  record.checks.push('accepted item is read-only: no dispatch readiness, document writes or verification; reading, original text and delivery evidence remain available');
   await mkdir(join(root, 'release'), { recursive: true });
   await page.screenshot({ path: join(root, `release/desktop-${process.platform}-${arch}.png`) });
   assert.deepEqual(errors, []);

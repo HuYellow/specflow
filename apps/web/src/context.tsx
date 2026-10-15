@@ -1,13 +1,22 @@
 import { createContext, useContext, type ReactNode } from 'react';
 import { FileText, Activity, ShieldCheck, ListChecks, Blocks, FileCheck2, CircleHelp } from 'lucide-react';
 import type { Artifact, ArtifactRevision, Candidate, Comment, Decision, Evidence, ExecutionBinding, Finding, Interaction, ModelTarget, NodeRun, Project, TaskRun, Attempt, WorkItem, Workflow, WorkflowRun, RequirementRevision, ClarificationSession, ClarificationDraft } from '../../../packages/domain/index.ts';
+import type { AttentionItem } from './attention.ts';
 export type Snapshot = { item: WorkItem; requirements: { current: RequirementRevision; history: RequirementRevision[] }; clarifications: ClarificationSession[]; clarificationDrafts: ClarificationDraft[]; project: Project; workflows: Workflow[]; runs: WorkflowRun[]; nodes: NodeRun[]; attempts: Attempt[]; bindings: ExecutionBinding[]; artifacts: Artifact[]; revisions: ArtifactRevision[]; candidates: Candidate[]; evidence: Evidence[]; findings: Finding[]; tasks: TaskRun[]; comments: Comment[]; decisions: Decision[]; interactions: Interaction[] };
 export type Tab = 'flow' | 'requirements' | 'artifacts' | 'code' | 'runs';
+export type DocumentView = 'reading' | 'execution' | 'compare';
+export type BackendCatalog = { maka: { available: boolean; reason?: string }; targets: ModelTarget[]; [key: string]: unknown };
 export interface WorkspaceContext {
-  snapshot?: Snapshot; project?: Project; backend: any; busy: boolean; tab: Tab; setTab(tab: Tab): void;
+  snapshot?: Snapshot; project?: Project; backend: BackendCatalog | undefined; busy: boolean; tab: Tab; setTab(tab: Tab): void;
   selectedNode: string; setSelectedNode(id: string): void; selectedArtifact: string; setSelectedArtifact(id: string): void;
   selectedAttempt: string; setSelectedAttempt(id: string): void;
-  perform(operation: () => Promise<unknown>, message?: string): Promise<void>;
+  selectedRevision: string; setSelectedRevision(id: string): void;
+  documentView: DocumentView; setDocumentView(view: DocumentView): void;
+  selectionMode: 'follow' | 'pinned'; followCurrent(): void;
+  pendingItems: AttentionItem[]; openAttention(item: AttentionItem): void; openPending(): void;
+  openRun(id: string): void; isPending(scope: string): boolean;
+  overlayOpen: boolean;
+  perform(operation: () => Promise<unknown>, message?: string, scope?: string): Promise<void>;
   refresh(id?: string, projectId?: string): Promise<void>; openWorkflow(): void; openImport(): void; openSettings(): void;
 }
 export const Workspace = createContext<WorkspaceContext>(null!);

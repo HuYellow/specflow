@@ -1,32 +1,31 @@
-import { useState } from 'react';
-import { Activity, ChevronDown, ChevronRight, CircleDot, RefreshCcw, Square } from 'lucide-react';
-import type { Interaction } from '../../../packages/domain/index.ts';
+import { useEffect, useState } from 'react';
+import { Activity, ChevronRight, Loader2, RefreshCcw } from 'lucide-react';
+import type { AttemptPage } from '../../../packages/ui-contracts/index.ts';
 import { api } from './api.ts';
-import { Empty, fmt, labels, short, targetLabel, useWorkspace } from './context.tsx';
-import { ClarificationHistory } from './ClarificationPanel.tsx';
+import { fmt, labels, targetLabel, useWorkspace } from './context.tsx';
+import { RunDetail } from './RunDetail.tsx';
+export { RunDetail } from './RunDetail.tsx';
+
 export function Runs() {
-  const { snapshot, selectedAttempt, setSelectedAttempt, busy, perform } = useWorkspace();
-  const attempt = snapshot?.attempts.find(a => a.id === selectedAttempt) || snapshot?.attempts.at(-1);
-  const bindings = snapshot?.bindings.filter(b => b.attemptId === attempt?.id) || [];
-  return <div className="run-layout"><section className="attempt-list"><div className="panel-heading"><h2>运行记录 <span>{snapshot?.attempts.length || 0}</span></h2></div>{snapshot?.attempts.slice().reverse().map(a => <button className={a.id === attempt?.id ? 'active' : ''} key={a.id} onClick={() => setSelectedAttempt(a.id)}><span className={`attempt-dot ${a.execution}`} /><div><strong>{snapshot.nodes.find(n => n.id === a.nodeRunId)?.name} <span>#{a.number}</span></strong><small>{targetLabel(a.target)}</small><time>{fmt(a.startedAt)}</time></div><ChevronRight size={14} /></button>)}</section>
-    <section className="attempt-detail">{!attempt ? <Empty icon={<Activity size={34} />} title="还没有运行记录" description="每次尝试都会保留输入版本、模型目标和执行身份。" /> : <><div className="panel-heading"><div><h2>{snapshot?.nodes.find(n => n.id === attempt.nodeRunId)?.name}<span>尝试 {attempt.number}</span></h2><p>{targetLabel(attempt.target)}</p></div><span className={`badge ${attempt.execution}`}>{labels[attempt.execution]}</span></div><div className="run-metrics"><div><span>输入 Token</span><strong>{attempt.usage?.inputTokens ?? '—'}</strong></div><div><span>输出 Token</span><strong>{attempt.usage?.outputTokens ?? '—'}</strong></div><div><span>实际费用</span><strong>{attempt.target.backend === 'sandbox' ? '不调用 API' : attempt.usage?.costUsd != null ? `$${attempt.usage.costUsd}` : '未知'}</strong></div></div>
-    <div className="identity-list"><h3>执行身份</h3>{bindings.map(b => <div key={b.id}><span>{b.kind === 'resume' ? '恢复绑定' : '初始绑定'}</span><code>session {short(b.ref.sessionId)} / turn {short(b.ref.turnId)} / run {short(b.ref.runId)}</code></div>)}</div>
-    {attempt.requirementRevisionId && <div className="identity-list"><h3>本次使用的需求</h3>{(() => { const source = snapshot?.requirements.history.find(r => r.id === attempt.requirementRevisionId); return <div><span>版本 {source?.number} · {source?.documents.length || 0} 份文档{source?.id !== snapshot?.requirements.current.id ? ' · 需求已更新' : ''}</span><code>{short(source?.contentHash)}</code></div>; })()}</div>}
-    {attempt.guidance && <details className="context-details"><summary>本次使用的项目章程 <ChevronDown size={15} /></summary><div><span>内容 <code>{short(attempt.guidance.contentHash)}</code>{attempt.guidance.contentHash !== snapshot?.project.guidance?.contentHash ? ' · 当前章程已更新' : ''}</span>{attempt.guidance.files.map(file => <div key={file.name}><h4>{file.name}</h4><pre>{file.content}</pre></div>)}<h4>补充工程规则</h4><pre>{attempt.guidance.rules}</pre></div></details>}
-    {attempt.clarificationSessionId && (() => { const session = snapshot?.clarifications.find(s => s.id === attempt.clarificationSessionId); return session ? <div className="context-details"><ClarificationHistory session={session} /></div> : null; })()}
-    {attempt.error && <div className="blocker-box"><CircleDot size={16} /><p>{attempt.error}</p></div>}
-    <details className="context-details"><summary>查看固定输入与上下文 <ChevronDown size={15} /></summary><div><span>输入哈希 <code>{attempt.inputHash}</code></span><pre>{attempt.prompt}</pre></div></details>
-    {attempt.output && <details className="context-details" open><summary>阶段输出 <ChevronDown size={15} /></summary><pre>{(() => { try { return JSON.stringify(JSON.parse(attempt.output), null, 2); } catch { return attempt.output; } })()}</pre></details>}
-    {snapshot?.interactions.filter(i => i.attemptId === attempt.id && i.state === 'pending').map(i => <InteractionCard key={i.id} interaction={i} />)}
-    <div className="run-actions"><button className="outline-button" disabled={busy || !['running', 'starting', 'waiting_interaction'].includes(attempt.execution)} onClick={() => perform(() => api(`/attempts/${attempt.id}/stop`, {}), '已请求停止原执行')}><Square size={14} /> 停止</button><button className="outline-button" disabled={busy || !['reconciling', 'failed', 'cancelled'].includes(attempt.execution)} onClick={() => perform(() => api(`/attempts/${attempt.id}/reconcile`, {}), '已核对原执行身份')}><RefreshCcw size={14} /> 核对原执行</button><button className="outline-button" disabled={busy || !['reconciling', 'failed', 'cancelled'].includes(attempt.execution)} onClick={() => perform(() => api(`/attempts/${attempt.id}/resume`, {}), '已提交恢复请求')}>恢复原执行</button></div>
-    </>}</section>
-  </div>;
-}
-function InteractionCard({ interaction }: { interaction: Interaction }) {
-  const { busy, perform } = useWorkspace(); const request = interaction.request as any;
-  const [values, setValues] = useState<Record<string, any>>({});
-  const answer = (data: unknown) => perform(() => api(`/interactions/${interaction.id}/answer`, { answer: data }), '回答已提交到底座');
-  if (request.kind === 'question') return <div className="interaction-card"><h3>补充工程信息</h3>{request.questions.map((q: any, i: number) => <label className="field" key={i}>{q.question}<input value={values[i] || ''} onChange={e => setValues(v => ({ ...v, [i]: e.target.value }))} list={`q-${interaction.id}-${i}`} /><datalist id={`q-${interaction.id}-${i}`}>{q.options.map((o: any) => <option key={o.label} value={o.label} />)}</datalist></label>)}<button className="primary-button" disabled={busy} onClick={() => answer({ kind: 'question', answers: request.questions.map((_: any, i: number) => values[i] || null) })}>提交回答</button></div>;
-  if (request.kind === 'form') return <div className="interaction-card"><h3>{request.message || '完成执行信息'}</h3>{request.fields.map((field: any) => <label className="field" key={field.name}>{field.label}{field.kind === 'single_select' ? <select value={values[field.name] ?? field.default ?? ''} onChange={e => setValues(v => ({ ...v, [field.name]: e.target.value }))}>{field.options.map((o: any) => <option value={o.value} key={o.value}>{o.label}</option>)}</select> : <input type={field.kind === 'boolean' ? 'checkbox' : ['number', 'integer'].includes(field.kind) ? 'number' : 'text'} defaultValue={field.default} onChange={e => setValues(v => ({ ...v, [field.name]: field.kind === 'boolean' ? e.target.checked : ['number', 'integer'].includes(field.kind) ? Number(e.target.value) : e.target.value }))} />}</label>)}<button className="primary-button" disabled={busy} onClick={() => answer({ kind: 'form', action: 'accept', values: Object.fromEntries(request.fields.map((f: any) => [f.name, values[f.name] ?? f.default ?? ''])) })}>提交表单</button><button className="outline-button" onClick={() => answer({ kind: 'form', action: 'decline' })}>拒绝</button></div>;
-  return <div className="interaction-card"><h3>{request.kind === 'permission' ? '确认工具操作' : '确认执行范围'}</h3><p>{request.prompt?.hint || request.justification || '底座请求一次明确授权。'}</p>{request.prompt?.toolName && <strong>{request.prompt.toolName}</strong>}<pre>{JSON.stringify(request.prompt?.args || request.expansion || request.target || {}, null, 2)}</pre><div className="run-actions"><button className="outline-button" disabled={busy} onClick={() => answer({ kind: request.kind, decision: 'deny', ...(request.kind === 'permission' ? { rememberForTurn: false } : {}) })}>拒绝</button><button className="primary-button" disabled={busy} onClick={() => answer({ kind: request.kind, decision: 'allow', ...(request.kind === 'permission' ? { rememberForTurn: false } : {}) })}>允许一次</button></div></div>;
+  const { snapshot, selectedAttempt, setSelectedAttempt } = useWorkspace();
+  const [state, setState] = useState(''), [nodeId, setNodeId] = useState(''), [offset, setOffset] = useState(0);
+  const [page, setPage] = useState<AttemptPage>(), [error, setError] = useState(''), [loading, setLoading] = useState(false), [retry, setRetry] = useState(0);
+  const itemId = snapshot?.item.id;
+  const version = snapshot?.attempts.map(attempt => `${attempt.id}:${attempt.revision}`).join(',');
+  useEffect(() => {
+    if (!itemId) return;
+    let active = true; setLoading(true); setError('');
+    const query = new URLSearchParams({ offset: String(offset), limit: '30' });
+    if (state) query.set('state', state); if (nodeId) query.set('nodeRunId', nodeId);
+    void api<AttemptPage>(`/work-items/${itemId}/attempts?${query}`).then(value => { if (active) setPage(value); }).catch(error => { if (active) setError(error.message); }).finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [itemId, version, state, nodeId, offset, retry]);
+  const attemptId = selectedAttempt || snapshot?.attempts.at(-1)?.id || '';
+  return <div className="run-layout"><section className="attempt-list"><div className="panel-heading"><h2>运行记录 <span>{page?.total ?? snapshot?.attempts.length ?? 0}</span></h2></div>
+    <div className="run-filters"><label>步骤<select aria-label="筛选运行步骤" value={nodeId} onChange={event => { setNodeId(event.target.value); setOffset(0); }}>{<option value="">全部步骤</option>}{snapshot?.nodes.map(node => <option key={node.id} value={node.id}>{node.name}{node.workflowRunId !== snapshot.runs.at(-1)?.id ? ' · 历史运行' : ''}</option>)}</select></label><label>状态<select aria-label="筛选运行状态" value={state} onChange={event => { setState(event.target.value); setOffset(0); }}><option value="">全部状态</option>{['pending', 'starting', 'running', 'waiting_interaction', 'completed', 'failed', 'cancelled', 'reconciling'].map(value => <option key={value} value={value}>{labels[value]}</option>)}</select></label></div>
+    {loading && <p className="run-list-feedback" role="status"><Loader2 size={14} className="spin" />正在读取运行列表</p>}{error && <div className="run-list-feedback" role="alert"><p>{error}</p><button className="outline-button" onClick={() => setRetry(value => value + 1)}><RefreshCcw size={14} />重试读取列表</button></div>}
+    {!loading && !error && !page?.items.length && <p className="attempt-list-empty">{state || nodeId ? '没有匹配的运行记录。' : '运行步骤后，尝试会出现在这里。'}</p>}
+    {page?.items.map(attempt => <button key={attempt.id} className={attempt.id === attemptId ? 'active' : ''} onClick={() => setSelectedAttempt(attempt.id)}><span className={`attempt-dot ${attempt.execution}`} /><div><strong>{snapshot?.nodes.find(node => node.id === attempt.nodeRunId)?.name} <span>#{attempt.number}</span></strong><small>{targetLabel(attempt.target)}</small><small>{labels[attempt.execution]}{attempt.reviewPerspective ? ` · ${attempt.reviewPerspective === 'coverage' ? '需求覆盖' : '反例检查'}` : ''}</small><time>{fmt(attempt.startedAt)}</time></div><ChevronRight size={14} /></button>)}
+    {page && <div className="run-pagination"><button className="outline-button" disabled={loading || offset === 0} onClick={() => setOffset(value => Math.max(0, value - 30))}>上一页</button><span>{page.total ? `${offset + 1}–${Math.min(offset + 30, page.total)} / ${page.total}` : '0 项'}</span><button className="outline-button" disabled={loading || page.nextOffset === undefined} onClick={() => setOffset(page.nextOffset!)}>下一页</button></div>}
+  </section><RunDetail attemptId={attemptId} /></div>;
 }

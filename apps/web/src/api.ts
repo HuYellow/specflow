@@ -1,9 +1,20 @@
 let token = '';
-export class ApiError extends Error { constructor(message: string, public code: string, public details?: unknown) { super(message); } }
-export async function api<T = any>(path: string, body?: unknown): Promise<T> {
-  const response = await fetch(`/api${path}`, body === undefined ? {} : { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Specflow-Token': token, 'Idempotency-Key': crypto.randomUUID() }, body: JSON.stringify(body) });
-  const data = await response.json();
-  if (!response.ok) throw new ApiError(data.message, data.code, data.details);
+export class ApiError extends Error { constructor(message: string, public code: string, public details?: unknown, public uncertain = false, public operationKey?: string) { super(message); } }
+export async function api<T = any>(path: string, body?: unknown, options: { idempotencyKey?: string; signal?: AbortSignal } = {}): Promise<T> {
+  const operationKey = body === undefined ? undefined : options.idempotencyKey || crypto.randomUUID();
+  let response: Response;
+  try {
+    response = await fetch(`/api${path}`, body === undefined ? { signal: options.signal } : { method: 'POST', signal: options.signal, headers: { 'Content-Type': 'application/json', 'X-Specflow-Token': token, 'Idempotency-Key': operationKey! }, body: JSON.stringify(body) });
+  } catch {
+    throw new ApiError(body === undefined ? '无法连接本地服务，请确认服务已启动后重试。' : '写入结果尚未确认，请先刷新核对工程记录，避免重复派发。', 'NETWORK_ERROR', undefined, body !== undefined, operationKey);
+  }
+  let data;
+  try { data = await response.json(); }
+  catch { throw new ApiError(body === undefined ? '本地服务返回了无法读取的响应，请刷新重试。' : '本次写入的响应无法读取，请先刷新核对结果。', 'INVALID_RESPONSE', undefined, body !== undefined, operationKey); }
+  if (!response.ok) {
+    const uncertain = body !== undefined && response.status >= 500;
+    throw new ApiError(uncertain ? `${data.message || '服务端写入响应异常'}；结果尚未确认，请先核对工程记录。` : data.message, data.code, data.details, uncertain, operationKey);
+  }
   if (path === '/bootstrap') token = data.token;
   return data;
 }

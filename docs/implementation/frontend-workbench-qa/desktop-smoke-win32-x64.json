@@ -1,0 +1,22 @@
+{
+  "platform": "win32",
+  "arch": "x64",
+  "packaged": false,
+  "userData": "C:\\Users\\huyel\\AppData\\Local\\Temp\\specflow-desktop-test-s1F3nv",
+  "checks": [
+    "bundled runtime launch from unrelated cwd; renderer isolation; backend authentication",
+    "single instance",
+    "native repository selection bridge (dialog selection stubbed)",
+    "complete CSV engineering workflow; bundled Node tests; Git acceptance",
+    "bundled official Maka Host startup and plugin install",
+    "native save dialog bridge and evidence export (dialog selection stubbed)",
+    "accepted item is read-only: no dispatch readiness, document writes or verification; reading, original text and delivery evidence remain available",
+    "normal exit closes backend listener",
+    "restart retains accepted work item",
+    "desktop crash closes backend listener through owner watchdog or IPC disconnect"
+  ],
+  "testedAt": "2026-10-15T11:05:05.176Z",
+  "desktopPid": 35108,
+  "launcherPid": 28056,
+  "passed": true
+}

@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { z } from 'zod';
 import { assert, compileWorkflow, defaultWorkflow, DomainError, hash, id, now, parseTasks,
@@ -11,12 +11,13 @@ import { Workspaces } from './workspaces.ts';
 import { sandboxTargets } from './sandbox-backend.ts';
 import { Requirements, requirementFresh, requirementText, validateRequirements } from './requirements.ts';
 import type { RequirementDocument } from '../../../packages/domain/index.ts';
-import { Guidance, guidanceFresh, guidanceText } from './guidance.ts';
+import { Guidance, guidanceFresh, guidanceText, guidanceSnapshot } from './guidance.ts';
 import { clarificationOutput, clarificationFresh, assertClarifiedSpec, clarificationContext, appendClarificationRecord } from './clarifications.ts';
 import type { ClarificationSession } from '../../../packages/domain/index.ts';
 import { createReviewCriteria, reviewInstructions, reviewPassed, reviewReportSchema, validateReviewReport, type ReviewContext } from '../../../packages/review-policy/index.ts';
 import { findingLogicalId, openReviewFindings, reviewArtifactSources, reviewBindings, reviewEvidence, reviewPrompt, reviewSubjectBindings } from './reviews.ts';
 import { humanBriefSchema } from '../../../packages/document-presentation/index.ts';
+import type { AcceptancePrecheck, AttemptSummary, AttemptPage } from '../../../packages/ui-contracts/index.ts';
 
 const resultSchema = z.object({ summary: z.string(), artifacts: z.array(z.object({ logicalId: z.string(), type: z.string(), content: z.string().min(1), humanBrief: humanBriefSchema.optional() })), review: reviewReportSchema.optional(), clarification: clarificationOutput.optional(), findings: z.array(z.object({ severity: z.enum(['blocker', 'warning']), location: z.string().trim().min(1), body: z.string().trim().min(1), targetLogicalId: z.string().optional() })).optional() });
 const documentInstructions = `文档双份输出协议：每个 artifacts 条目分别输出完整、严谨、可供后续 AI 执行的 Markdown content，以及供人快速阅读的 humanBrief。content 是唯一的执行依据，不得为了简报而缩写、删减或省略执行细节；明确本阶段适用的目标、范围与非目标、稳定的需求/决策/任务 ID、接口和输入输出、边界与约束、错误和异常处理、验收条件与验证方式、尚未确认的事项，并通过上游逻辑名称和条目 ID 记录追溯关系。不要虚构测试已通过或把未知信息写成事实。humanBrief 只提炼同一条 content 已写明的结论，不新增需求或执行指令；标题最多 120 字符、摘要最多 600 字符，用 2 至 6 个短章节呈现决策、范围、风险或下一步，每章标题最多 120 字符、1 至 6 条要点且每条最多 300 字符。没有依据的章节应省略，不得编造风险或下一步。简报全部使用纯文本，不输出 HTML、脚本、CSS 或外部资源，展示页面由应用生成。结构示例："humanBrief":{"title":"文档标题","summary":"本阶段的主要结论","sections":[{"title":"范围","items":["正文中已明确的范围"]},{"title":"验收","items":["正文中已明确的验证条件"]}]}。顶层 summary 只是本次运行概述，不能替代每份文档的 humanBrief。`;
@@ -29,6 +30,7 @@ export class EngineeringService {
   readonly verificationControllers = new Map<string, AbortController>();
   private workItemLocks = new Set<string>();
   private startLocks = new Set<string>();
+  private verificationLocks = new Set<string>();
   constructor(readonly store: Store, readonly dataDir: string, readonly backends: Record<'maka' | 'sandbox', ExecutionBackend>) { this.artifacts = new Artifacts(store); this.workspaces = new Workspaces(dataDir); this.requirements = new Requirements(store); this.guidance = new Guidance(store); }
   async initialize() {
     await mkdir(this.dataDir, { recursive: true });
@@ -199,6 +201,7 @@ export class EngineeringService {
   }
   async startNode(nodeRunId: string, expectedRevision: number, override?: ModelTarget) {
     const { item, def } = this.nodeContext(nodeRunId);
+    assert(!this.workItemLocks.has(item.id), 'WORKSPACE_BUSY', '工作项正在准备候选或集成代码');
     assert(!this.startLocks.has(item.id), 'WORKSPACE_BUSY', '当前工作项有正在启动的阶段');
     if (def.type === 'human') return this.startNodeInternal(nodeRunId, expectedRevision, override);
     this.startLocks.add(item.id);
@@ -551,12 +554,17 @@ export class EngineeringService {
   }
   async verifyCandidate(candidateId: string, signal?: AbortSignal) {
     const candidate = this.store.get('candidates', candidateId), item = this.store.get('workItems', candidate.workItemId), project = this.store.get('projects', item.projectId), result = [];
+    assert(!this.workItemLocks.has(item.id), 'WORKSPACE_BUSY', '代码正在集成，请稍后验证');
+    assert(!this.verificationLocks.has(candidateId), 'VERIFICATION_BUSY', '当前候选正在验证');
     assert(project.commands.length, 'VERIFY_MISSING', '项目尚未配置确定性验证命令');
-    for (const command of project.commands) {
-      const verified = await verify(command, candidate.workspace, signal);
-      result.push(this.store.create('evidence', { workItemId: item.id, candidateId, targetHash: verified.targetHash, command, commandHash: hash(JSON.stringify(command)), exitCode: verified.exitCode, stdout: verified.stdout, stderr: verified.stderr, environment: verified.environment, status: verified.exitCode === 0 && !verified.timedOut && !verified.stale ? 'passed' : 'failed', stale: verified.stale, startedAt: verified.startedAt, finishedAt: verified.finishedAt }));
-    }
-    return result;
+    this.verificationLocks.add(candidateId);
+    try {
+      for (const command of project.commands) {
+        const verified = await verify(command, candidate.workspace, signal);
+        result.push(this.store.create('evidence', { workItemId: item.id, candidateId, targetHash: verified.targetHash, command, commandHash: hash(JSON.stringify(command)), exitCode: verified.exitCode, stdout: verified.stdout, stderr: verified.stderr, environment: verified.environment, status: verified.exitCode === 0 && !verified.timedOut && !verified.stale ? 'passed' : 'failed', stale: verified.stale, startedAt: verified.startedAt, finishedAt: verified.finishedAt }));
+      }
+      return result;
+    } finally { this.verificationLocks.delete(candidateId); }
   }
   private async verifyNode(nodeRunId: string, signal?: AbortSignal) {
     try {
@@ -583,40 +591,83 @@ export class EngineeringService {
     }
     return accepted;
   }
-  async acceptCode(workItemId: string, actor: string) {
+  /** These assertions only read records, files and fingerprints. Both preview and integration use them. */
+  private async assertCodeAcceptance(workItemId: string, candidate: Candidate) {
+    const item = this.store.get('workItems', workItemId), project = this.store.get('projects', item.projectId);
+    assert(item.status !== 'accepted', 'ITEM_ACCEPTED', '此工作项已经接纳');
+    assert(this.latestCandidate(workItemId)?.id === candidate.id, 'CANDIDATE_SUPERSEDED', '候选已被新的尝试替代');
+    assert(!this.startLocks.has(item.id), 'WORKSPACE_BUSY', '工程阶段正在启动');
+    assert(!this.store.list('candidates', current => current.workItemId === item.id).some(current => this.verificationLocks.has(current.id)), 'WORKSPACE_BUSY', '工作项还有正在执行的候选验证');
+    const activeAttempts = this.store.list('attempts', a => ['pending', 'starting', 'running', 'waiting_interaction', 'reconciling'].includes(a.execution) && this.nodeContext(a.nodeRunId).item.id === item.id);
+    assert(!activeAttempts.length, 'WORKSPACE_BUSY', '工作项还有未结束或待核对的执行');
+    const itemRuns = new Set(this.store.list('runs', run => run.workItemId === item.id).map(run => run.id));
+    assert(!this.store.list('nodes', node => itemRuns.has(node.workflowRunId) && ['starting', 'running', 'waiting_interaction', 'reconciling'].includes(node.execution)).length, 'WORKSPACE_BUSY', '工作项还有未结束的执行或验证');
+    const files: import('../../../packages/domain/index.ts').GuidanceFile[] = [];
+    for (const name of ['AGENT.md', 'AGENTS.md'] as const) {
+      const path = await safePath(project.rootPath, name);
+      const info = await stat(path).catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return undefined; throw error; });
+      if (!info) continue;
+      assert(info.isFile() && info.size <= 128 * 1024, 'GUIDANCE_INVALID', `${name} 必须是大小不超过 128 KiB 的文本文件`);
+      const content = new TextDecoder('utf-8', { fatal: true }).decode(await readFile(path));
+      assert(content.trim() && !content.includes('\0'), 'GUIDANCE_INVALID', `${name} 为空或包含二进制内容`);
+      files.push({ name, content, contentHash: hash(content) });
+    }
+    assert(!project.guidanceError && guidanceSnapshot(project.rules, files).contentHash === project.guidance?.contentHash, 'SYNC_REQUIRED', '项目章程或规则已变化，请刷新工作项后重新检查');
+    for (const artifact of this.store.list('artifacts', a => a.workItemId === item.id && !!a.acceptedRevisionId)) {
+      const accepted = this.store.get('artifactRevisions', artifact.acceptedRevisionId!);
+      const path = await safePath(item.workspace, `.specflow/work-items/${item.id}/${artifact.logicalId}.md`);
+      const content = await readFile(path, 'utf8').catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return undefined; throw error; });
+      assert(content !== undefined && hash(content) === accepted.contentHash, 'SYNC_REQUIRED', '工程文档在应用外变化，请刷新并比较后重新检查');
+    }
+    const candidateAttempt = this.store.get('attempts', candidate.attemptId);
+    assert(candidateAttempt.execution === 'completed' && requirementFresh(this.store, candidateAttempt.requirementRevisionId) && guidanceFresh(this.store, item.id, candidateAttempt.guidance?.contentHash) && this.artifacts.isFresh(candidateAttempt.inputs), 'INPUT_STALE', '候选代码的执行或原始工程输入已无效');
+    const tasks = this.store.list('tasks', t => t.attemptId === candidateAttempt.id);
+    assert(tasks.every(t => t.state === 'verified'), 'TASKS_INCOMPLETE', '候选任务尚未全部通过验证与复核');
+    const fingerprint = await treeHash(candidate.workspace);
+    assert(candidate.reviewedHash === fingerprint && candidate.reviewGroupId, 'REVIEW_REQUIRED', '当前代码内容没有有效的双视角独立复核');
+    const run = this.store.get('runs', this.store.get('nodes', candidateAttempt.nodeRunId).workflowRunId);
+    for (const commandId of run.definition.requiredVerification) {
+      const command = project.commands.find(x => x.id === commandId);
+      const proof = this.store.list('evidence', e => e.candidateId === candidate.id && e.command.id === commandId).at(-1);
+      assert(proof && command && proof.status === 'passed' && !proof.stale && proof.targetHash === fingerprint && proof.commandHash === hash(JSON.stringify(command)), 'VERIFICATION_FAILED', `当前代码缺少有效 ${commandId} 验证`);
+    }
+    const findings = openReviewFindings(this.store, item.id, ['implementation']).filter(f => f.severity === 'blocker'); assert(!findings.length, 'REVIEW_BLOCKED', '当前代码有阻塞发现');
+    for (const def of run.definition.nodes.filter(x => x.type === 'human')) for (const input of def.inputs) {
+      const binding = this.artifacts.resolve(item.id, input), revision = this.store.get('artifactRevisions', binding.artifactRevisionId);
+      assert(!run.definition.requireReview || (revision.reviewed && revision.reviewGroupId), 'REVIEW_REQUIRED', `${binding.logicalId} 当前版本缺少双视角复核`);
+      await this.assertCodeProvenance(reviewBindings(this.store, [binding]));
+    }
+    const sourceHead = await this.workspaces.git(item.workspace, ['rev-parse', 'HEAD']);
+    const dirty = await this.workspaces.git(item.workspace, ['status', '--porcelain', '--', '.', ':(exclude).specflow']);
+    assert(sourceHead === item.acceptedCommit && candidate.baseCommit === item.acceptedCommit && !dirty, 'GIT_BASELINE_CONFLICT', '工作项基线或源代码已经变化，请比较差异后集成');
+    // Async fingerprint checks must not hide an input update made while this request was reading.
+    assert(this.store.get('workItems', item.id).revision === item.revision && this.store.get('projects', project.id).revision === project.revision && this.store.get('candidates', candidate.id).revision === candidate.revision && this.latestCandidate(item.id)?.id === candidate.id && this.store.get('attempts', candidateAttempt.id).revision === candidateAttempt.revision, 'SYNC_REQUIRED', '检查期间工程状态变化，请重新检查');
+    assert(requirementFresh(this.store, candidateAttempt.requirementRevisionId) && guidanceFresh(this.store, item.id, candidateAttempt.guidance?.contentHash) && this.artifacts.isFresh(candidateAttempt.inputs), 'INPUT_STALE', '检查期间原始工程输入变化，请重新检查');
+    return { item, fingerprint, baselineHash: sourceHead };
+  }
+  async acceptancePrecheck(candidateId: string): Promise<AcceptancePrecheck> {
+    const candidate = this.store.get('candidates', candidateId), checkedAt = now();
+    try {
+      assert(!this.workItemLocks.has(candidate.workItemId), 'WORKSPACE_BUSY', '工作项正在集成');
+      const result = await this.assertCodeAcceptance(candidate.workItemId, candidate);
+      return { candidateId, checkedAt, ready: true, blockers: [], candidateHash: result.fingerprint, baselineHash: result.baselineHash };
+    } catch (error) {
+      return { candidateId, checkedAt, ready: false, blockers: [{ code: error instanceof DomainError ? error.code : 'PRECHECK_FAILED', message: (error as Error).message }] };
+    }
+  }
+  async acceptCode(workItemId: string, actor: string, expectedCandidateId?: string) {
     assert(!this.workItemLocks.has(workItemId), 'WORKSPACE_BUSY', '工作项正在集成'); this.workItemLocks.add(workItemId);
     let unlockDocuments: (() => void) | undefined;
     try {
       const item = this.store.get('workItems', workItemId), candidate = this.latestCandidate(item.id); assert(candidate, 'CANDIDATE_MISSING', '尚无候选代码');
+      assert(!expectedCandidateId || candidate.id === expectedCandidateId, 'CANDIDATE_SUPERSEDED', '选定候选已被新尝试替代，请重新审阅当前候选');
       await this.guidance.refresh(item.projectId);
-      assert(!this.startLocks.has(item.id), 'WORKSPACE_BUSY', '工程阶段正在启动');
-      const activeAttempts = this.store.list('attempts', a => ['starting', 'running', 'waiting_interaction', 'reconciling'].includes(a.execution) && this.nodeContext(a.nodeRunId).item.id === item.id);
-      assert(!activeAttempts.length, 'WORKSPACE_BUSY', '工作项还有未结束或待核对的执行');
       await this.artifacts.scanExternalChanges(item.id);
       unlockDocuments = this.artifacts.lockWorkItem(item.id);
-      const candidateAttempt = this.store.get('attempts', candidate.attemptId);
-      assert(candidateAttempt.execution === 'completed' && requirementFresh(this.store, candidateAttempt.requirementRevisionId) && guidanceFresh(this.store, item.id, candidateAttempt.guidance?.contentHash) && this.artifacts.isFresh(candidateAttempt.inputs), 'INPUT_STALE', '候选代码的执行或原始工程输入已无效');
-      const tasks = this.store.list('tasks', t => t.attemptId === candidateAttempt.id);
-      assert(tasks.every(t => t.state === 'verified'), 'TASKS_INCOMPLETE', '候选任务尚未全部通过验证与复核');
-      const fingerprint = await treeHash(candidate.workspace);
-      assert(candidate.reviewedHash === fingerprint && candidate.reviewGroupId, 'REVIEW_REQUIRED', '当前代码内容没有有效的双视角独立复核');
-      const run = this.store.get('runs', this.store.get('nodes', candidateAttempt.nodeRunId).workflowRunId);
-      for (const commandId of run.definition.requiredVerification) {
-        const command = this.store.get('projects', item.projectId).commands.find(x => x.id === commandId);
-        const proof = this.store.list('evidence', e => e.candidateId === candidate.id && e.command.id === commandId).at(-1);
-        assert(proof && command && proof.status === 'passed' && !proof.stale && proof.targetHash === fingerprint && proof.commandHash === hash(JSON.stringify(command)), 'VERIFICATION_FAILED', `当前代码缺少有效 ${commandId} 验证`);
-      }
-      const findings = openReviewFindings(this.store, item.id, ['implementation']).filter(f => f.severity === 'blocker'); assert(!findings.length, 'REVIEW_BLOCKED', '当前代码有阻塞发现');
-      for (const def of run.definition.nodes.filter(x => x.type === 'human')) for (const input of def.inputs) {
-        const binding = this.artifacts.resolve(item.id, input), revision = this.store.get('artifactRevisions', binding.artifactRevisionId);
-        assert(!run.definition.requireReview || (revision.reviewed && revision.reviewGroupId), 'REVIEW_REQUIRED', `${binding.logicalId} 当前版本缺少双视角复核`);
-        await this.assertCodeProvenance(reviewBindings(this.store, [binding]));
-      }
-      const sourceHead = await this.workspaces.git(item.workspace, ['rev-parse', 'HEAD']);
-      const dirty = await this.workspaces.git(item.workspace, ['status', '--porcelain', '--', '.', ':(exclude).specflow']);
-      assert(sourceHead === item.acceptedCommit && candidate.baseCommit === item.acceptedCommit && !dirty, 'GIT_BASELINE_CONFLICT', '工作项基线或源代码已经变化，请比较差异后集成');
+      const { fingerprint } = await this.assertCodeAcceptance(workItemId, candidate);
       const targetCommit = await this.workspaces.checkpoint(candidate.workspace, 'SpecFlow accepted candidate');
-      assert(await treeHash(candidate.workspace) === fingerprint, 'CODE_STALE', '候选代码在接纳准备期间发生变化，需重新验证');
+      const prepared = await this.assertCodeAcceptance(workItemId, this.store.get('candidates', candidate.id));
+      assert(prepared.fingerprint === fingerprint, 'CODE_STALE', '候选代码在接纳准备期间发生变化，需重新验证');
       const op = this.store.create('codeOperations', { candidateId: candidate.id, targetCommit, state: 'prepared' });
       try {
         if (targetCommit !== item.acceptedCommit) await this.workspaces.git(item.workspace, ['-c', 'user.name=SpecFlow', '-c', 'user.email=specflow@localhost', 'cherry-pick', targetCommit]);
@@ -677,9 +728,16 @@ export class EngineeringService {
     return result;
   }
   async resumeAttempt(attemptId: string) {
+    const attempt = this.store.get('attempts', attemptId), { item } = this.nodeContext(attempt.nodeRunId);
+    assert(!this.workItemLocks.has(item.id) && !this.startLocks.has(item.id), 'WORKSPACE_BUSY', '工作项正在准备执行或集成代码');
+    this.startLocks.add(item.id);
+    try { return await this.resumeAttemptInternal(attemptId); }
+    finally { this.startLocks.delete(item.id); }
+  }
+  private async resumeAttemptInternal(attemptId: string) {
     const attempt = this.store.get('attempts', attemptId); assert(attempt.bindingId, 'EXECUTION_UNKNOWN', '缺少执行身份');
     assert(this.store.get('nodes', attempt.nodeRunId).currentAttemptId === attemptId, 'EXECUTION_SUPERSEDED', '该尝试已由新的执行接替，请查看当前尝试');
-    const { item } = this.nodeContext(attempt.nodeRunId); await this.guidance.refresh(item.projectId);
+    const { item } = this.nodeContext(attempt.nodeRunId); assert(!this.workItemLocks.has(item.id), 'WORKSPACE_BUSY', '工作项正在集成代码'); await this.guidance.refresh(item.projectId);
     assert(['failed', 'cancelled', 'reconciling'].includes(attempt.execution), 'EXECUTION_BUSY', '只能恢复已经中断的执行');
     assert(requirementFresh(this.store, attempt.requirementRevisionId) && guidanceFresh(this.store, item.id, attempt.guidance?.contentHash) && this.artifacts.isFresh(attempt.inputs), 'INPUT_STALE', '原运行输入已过期，请创建新尝试');
     if (attempt.review) await this.assertReviewFresh(attempt);
@@ -700,7 +758,27 @@ export class EngineeringService {
     else assert(finding.severity === 'warning', 'WAIVER_NOT_ALLOWED', '阻塞问题不能仅以理由豁免');
     return this.store.update('findings', findingId, { status, reason, evidenceId });
   }
-  async snapshot(workItemId: string) {
+  assertProjectWritable(projectId: string) {
+    const items = this.store.list('workItems', item => item.projectId === projectId);
+    assert(!items.some(item => this.workItemLocks.has(item.id) || this.startLocks.has(item.id)), 'WORKSPACE_BUSY', '项目阶段正在准备或代码正在接纳，请稍后更新工程设置');
+  }
+  private attemptSummary(attempt: Attempt): AttemptSummary {
+    const { prompt: _prompt, output, guidance, review, ...summary } = attempt;
+    return { ...summary, detailAvailable: true, outputPreview: output?.slice(0, 240), guidanceHash: guidance?.contentHash, reviewPerspective: review?.perspective };
+  }
+  attemptPage(workItemId: string, offset = 0, limit = 50, filters: { nodeRunId?: string; state?: Attempt['execution'] } = {}): AttemptPage {
+    this.store.get('workItems', workItemId);
+    const runIds = new Set(this.store.list('runs', run => run.workItemId === workItemId).map(run => run.id));
+    const nodeIds = new Set(this.store.list('nodes', node => runIds.has(node.workflowRunId)).map(node => node.id));
+    if (filters.nodeRunId && !nodeIds.has(filters.nodeRunId)) throw new DomainError('INVALID_REQUEST', '筛选节点不属于当前工作项', 400);
+    const all = this.store.list('attempts', attempt => nodeIds.has(attempt.nodeRunId) && (!filters.nodeRunId || attempt.nodeRunId === filters.nodeRunId) && (!filters.state || attempt.execution === filters.state)).reverse();
+    return { items: all.slice(offset, offset + limit).map(attempt => this.attemptSummary(attempt)), total: all.length, offset, nextOffset: offset + limit < all.length ? offset + limit : undefined };
+  }
+  attemptDetail(attemptId: string) {
+    const attempt = this.store.get('attempts', attemptId);
+    return { ...attempt, bindings: this.store.list('bindings', binding => binding.attemptId === attemptId), interactions: this.store.list('interactions', interaction => interaction.attemptId === attemptId), tasks: this.store.list('tasks', task => task.attemptId === attemptId) };
+  }
+  async snapshot(workItemId: string, options: { history?: 'full' | 'summary' } = {}) {
     const current = this.requirements.current(workItemId), item = this.store.get('workItems', workItemId);
     try { await this.guidance.refresh(item.projectId); } catch {}
     await this.artifacts.scanExternalChanges(workItemId); this.refreshClarifications(workItemId);
@@ -710,7 +788,8 @@ export class EngineeringService {
     const revisions = this.store.list('artifactRevisions', a => artifactIds.has(a.artifactId));
     const revisionIds = new Set(revisions.map(r => r.id));
     const clarifications = this.store.list('clarifications', s => s.workItemId === item.id), clarificationIds = new Set(clarifications.map(s => s.id));
-    return { item, requirements: { current, history: this.store.list('requirementRevisions', r => r.workItemId === item.id) }, clarifications, clarificationDrafts: this.store.list('clarificationDrafts', d => clarificationIds.has(d.sessionId)), project: this.store.get('projects', item.projectId), workflows: this.store.list('workflows', w => w.workItemId === item.id), runs, nodes, attempts,
+    const visibleAttempts = options.history === 'summary' ? attempts.map(attempt => ({ ...this.attemptSummary(attempt), prompt: '', output: undefined, guidance: undefined, review: undefined })) : attempts;
+    return { item, requirements: { current, history: this.store.list('requirementRevisions', r => r.workItemId === item.id) }, clarifications, clarificationDrafts: this.store.list('clarificationDrafts', d => clarificationIds.has(d.sessionId)), project: this.store.get('projects', item.projectId), workflows: this.store.list('workflows', w => w.workItemId === item.id), runs, nodes, attempts: visibleAttempts,
       bindings: this.store.list('bindings', b => attemptIds.has(b.attemptId)), artifacts, revisions, findings: this.store.list('findings', f => f.workItemId === item.id), evidence: this.store.list('evidence', e => e.workItemId === item.id), candidates: this.store.list('candidates', c => c.workItemId === item.id), tasks: this.store.list('tasks', t => nodeIds.has(t.nodeRunId)), comments: this.store.list('comments', c => revisionIds.has(c.artifactRevisionId)), decisions: this.store.list('decisions', d => d.workItemId === item.id), interactions: this.store.list('interactions', i => attemptIds.has(i.attemptId)) };
   }
   async seedDemo() {

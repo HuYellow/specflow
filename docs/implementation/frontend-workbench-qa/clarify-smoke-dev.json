@@ -1,0 +1,15 @@
+{
+  "packaged": false,
+  "platform": "win32",
+  "testedAt": "2026-10-15T10:52:54.731Z",
+  "userData": "C:\\Users\\huyel\\AppData\\Local\\Temp\\specflow-clarify-test-9ZvOrh",
+  "checks": [
+    "new default workflow has 13 stages, including independent clarification before specification review",
+    "guidance editor saves AGENT.md to the selected repository; model input includes its exact content; unclarified specification blocks review",
+    "rapid navigation before draft debounce retains answers, shares the pending session write across mounts and keeps submission enabled without a false revision conflict",
+    "answer drafts survive page reload; desktop restart restores pending questions without another model dispatch",
+    "guidance change invalidates pending questions and prior analysis while keeping original guidance and local answer draft readable",
+    "UI answers are written to a new specification revision; review and human acceptance unlock engineering design",
+    "no renderer errors or horizontal overflow at supported desktop widths"
+  ]
+}

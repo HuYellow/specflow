@@ -1,0 +1,15 @@
+{
+  "packaged": false,
+  "platform": "win32",
+  "testedAt": "2026-10-15T10:54:51.199Z",
+  "checks": [
+    "real mouse clicks on arrow, workspace name, and folder icon open the menu; arrow toggles it, outside click and Escape dismiss it; keyboard navigation selects an option",
+    "workspace chooser scopes work items; sidebar shows only existing artifacts of the selected item, including custom artifacts",
+    "work item list has no redundant repository button; workspace header opens repository registration and work item header opens creation for the current workspace",
+    "item switches and workspace switches reset detail selection; returning to a workspace restores its selected item",
+    "late response from the previous workspace cannot overwrite the current workspace or its artifacts",
+    "empty workspace retains its identity, supports project settings, and creates an item in that workspace",
+    "real Electron 200% zoom: scrolled workflow keeps its full primary action in the viewport without horizontal overflow",
+    "reload retains workspace selection; desktop widths have no horizontal overflow or renderer errors"
+  ]
+}

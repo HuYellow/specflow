@@ -39,7 +39,7 @@ try {
   } else if (command === 'desktop-smoke') {
     await run(['scripts/desktop-smoke.mjs', ...process.argv.slice(3)]);
   } else if (command === 'requirements-smoke') {
-    await run(['scripts/requirements-smoke.mjs']);
+    await run(['scripts/requirements-smoke.mjs', ...process.argv.slice(3)]);
   } else if (command === 'clarify-smoke') {
     await run(['scripts/clarify-smoke.mjs', ...process.argv.slice(3)]);
   } else if (command === 'workspaces-smoke') {

@@ -26,9 +26,14 @@ try {
     const result = await response.json(); if (!response.ok) throw new Error(JSON.stringify(result)); return result;
   }, { path, body });
   const wait = async predicate => { const deadline = Date.now() + 30000; while (Date.now() < deadline) { const state = await snapshot(); if (predicate(state)) return state; await new Promise(done => setTimeout(done, 100)); } throw new Error('Desktop clarification state did not settle'); };
-  const select = async name => page.locator('.stage-row').filter({ has: page.locator('strong').filter({ hasText: new RegExp(`^${name}$`) }) }).click();
-  const run = async (id, name) => { await select(name); await page.getByRole('button', { name: /^(运行此步骤|创建新尝试)$/ }).click(); return wait(state => { const node = state.nodes.find(n => n.nodeId === id); if (node.execution === 'failed' || (node.execution === 'completed' && node.gate === 'blocked')) throw new Error(JSON.stringify(node)); return node.execution === 'completed' || node.execution === 'waiting_interaction'; }); };
-  await expect(page.locator('.stage-row')).toHaveCount(13);
+  const select = async name => {
+    const stage = page.locator('.flow-stage-select').filter({ hasText: new RegExp(`${name}$`) });
+    const group = page.locator('.flow-step-group').filter({ has: stage });
+    if (!await group.evaluate(element => element.open)) await group.locator(':scope > summary').click();
+    await stage.click();
+  };
+  const run = async (id, name) => { await select(name); await page.getByRole('button', { name: /^(运行此步骤|运行所选步骤|创建新尝试|基于当前依据重新运行)$/ }).click(); return wait(state => { const node = state.nodes.find(n => n.nodeId === id); if (node.execution === 'failed' || (node.execution === 'completed' && node.gate === 'blocked')) throw new Error(JSON.stringify(node)); return node.execution === 'completed' || node.execution === 'waiting_interaction'; }); };
+  await expect(page.locator('.flow-stage-select')).toHaveCount(13);
   report.checks.push('new default workflow has 13 stages, including independent clarification before specification review');
 
   await page.getByRole('button', { name: /工程设置/ }).first().click();
@@ -52,7 +57,16 @@ try {
   await answerBox().waitFor();
   await expect(page.getByRole('button', { name: '提交答复并继续澄清' })).toBeDisabled();
   await answerBox().fill('抛出明确错误');
+  // Leave immediately, before the 400 ms debounce, so the old mount flushes its draft.
+  await page.getByRole('tab', { name: '需求输入', exact: true }).click();
+  await page.getByRole('tab', { name: '开发流程', exact: true }).click();
+  await expect(answerBox()).toHaveValue('抛出明确错误');
+  await expect(page.getByText(/其他编辑者已更新答复草稿/)).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '提交答复并继续澄清' })).toBeEnabled();
   await page.getByText('答复草稿已保存到工程记录', { exact: true }).waitFor();
+  await expect(page.getByText(/其他编辑者已更新答复草稿/)).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '提交答复并继续澄清' })).toBeEnabled();
+  report.checks.push('rapid navigation before draft debounce retains answers, shares the pending session write across mounts and keeps submission enabled without a false revision conflict');
   await page.reload(); await answerBox().waitFor(); await expect(answerBox()).toHaveValue('抛出明确错误');
   const beforeRestart = await snapshot(), sessionId = beforeRestart.clarifications.at(-1).id;
   await app.close(); app = await launch(); page = await app.firstWindow(); page.on('pageerror', error => errors.push(String(error)));
