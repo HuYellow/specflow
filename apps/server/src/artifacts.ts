@@ -5,15 +5,22 @@ import { safePath } from '../../../packages/verification-runner/index.ts';
 import { Store } from './store.ts';
 import { requirementFresh } from './requirements.ts';
 import { guidanceFresh } from './guidance.ts';
+import { openReviewFindings } from './reviews.ts';
 
 export class Artifacts {
   private locks = new Set<string>();
   constructor(readonly store: Store) {}
-  create(workItemId: string, logicalId: string, content: string, inputs: InputBinding[] = [], originAttemptId?: string, expectedRevision?: number, provenance: Pick<Partial<ArtifactRevision>, 'supersedesRevisionId' | 'clarificationSessionId'> = {}) {
+  create(workItemId: string, logicalId: string, content: string, inputs: InputBinding[] = [], originAttemptId?: string, expectedRevision?: number, provenance: Pick<Partial<ArtifactRevision>, 'supersedesRevisionId' | 'clarificationSessionId' | 'candidateId' | 'codeHash'> = {}) {
     assert(/^[a-z][a-z0-9_-]{0,63}$/.test(logicalId), 'ARTIFACT_INVALID', '产物名称格式不合法');
     const existing = this.store.list('artifacts', a => a.workItemId === workItemId && a.logicalId === logicalId)[0];
     assert(!existing || !this.locks.has(existing.id), 'ARTIFACT_BUSY', '产物接纳正在执行');
     if (expectedRevision !== undefined) assert(existing?.revision === expectedRevision, 'REVISION_CONFLICT', '产物已变化，请比较最新内容', existing);
+    // Editing or re-importing text must not erase its upstream/code obligations.
+    if (existing && !originAttemptId) {
+      const previous = this.store.get('artifactRevisions', existing.currentRevisionId);
+      if (!inputs.length) inputs = previous.inputs;
+      provenance = { candidateId: previous.candidateId, codeHash: previous.codeHash, ...provenance };
+    }
     return this.store.tx(() => {
       const artifact = existing || this.store.create('artifacts', { workItemId, logicalId, type: logicalId, revisionIds: [], currentRevisionId: '', owner: 'local' });
       const requirementRevisionId = originAttemptId ? this.store.get('attempts', originAttemptId).requirementRevisionId : this.store.get('workItems', workItemId).requirementRevisionId;
@@ -39,7 +46,9 @@ export class Artifacts {
     if (selection === 'accepted') assert(artifact.currentRevisionId === revisionId, 'INPUT_STALE', `${logicalId} 已编辑，当前版本尚未接纳`);
     const revision = this.store.get('artifactRevisions', revisionId);
     assert(this.revisionFresh(revision) && this.isFresh(revision.inputs), 'INPUT_STALE', `${logicalId} 依赖的需求、章程或上游版本已变化`);
-    if (selection === 'accepted') assert(!this.store.list('findings', f => f.targetHash === revision.contentHash && f.severity === 'blocker' && f.status === 'open').length, 'REVIEW_BLOCKED', `${logicalId} 有未解决的复核发现`);
+    if (selection === 'accepted') {
+      assert(!openReviewFindings(this.store, workItemId, [logicalId]).some(f => f.severity === 'blocker'), 'REVIEW_BLOCKED', `${logicalId} 有未解决的复核发现`);
+    }
     return { logicalId, artifactRevisionId: revision.id, contentHash: revision.contentHash };
   }
   isFresh(inputs: InputBinding[], visited = new Set<string>()): boolean {
@@ -80,8 +89,8 @@ export class Artifacts {
       const revision = this.store.get('artifactRevisions', artifact.currentRevisionId);
       assert(this.revisionFresh(revision) && this.isFresh(revision.inputs), 'INPUT_STALE', '产物依赖的需求、章程或上游已过期');
       assert(revision.content.trim().length >= 20 && !/\[NEEDS CLARIFICATION\]|\bTODO\b/.test(revision.content), 'ARTIFACT_INCOMPLETE', '产物内容不足或仍有未决问题');
-      assert(!requireReview || revision.reviewed, 'REVIEW_REQUIRED', '当前版本需要独立复核后才能接纳');
-      const blockers = this.store.list('findings', f => f.targetHash === revision.contentHash && f.severity === 'blocker' && f.status === 'open');
+      assert(!requireReview || (revision.reviewed && revision.reviewGroupId), 'REVIEW_REQUIRED', '当前版本需要双视角独立复核后才能接纳');
+      const blockers = openReviewFindings(this.store, artifact.workItemId, [artifact.logicalId]).filter(f => f.severity === 'blocker');
       assert(!blockers.length, 'REVIEW_BLOCKED', '当前版本仍有阻塞复核发现', blockers);
       const item = this.store.get('workItems', artifact.workItemId);
       const targetPath = await safePath(item.workspace, `.specflow/work-items/${item.id}/${artifact.logicalId}.md`);

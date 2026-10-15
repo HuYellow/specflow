@@ -8,6 +8,11 @@ import { applyWindowsCompatibility, MAKA_VERSION } from './compat.ts';
 import { MAKA_RELEASE, MAKA_RELEASE_AVAILABLE } from './release-policy.ts';
 
 export { MAKA_VERSION } from './compat.ts';
+const MAKA_TURN_TEXT_MAX_BYTES = 48 * 1024;
+function assertPromptSize(prompt: string) {
+  const actualBytes = Buffer.byteLength(prompt, 'utf8');
+  if (actualBytes > MAKA_TURN_TEXT_MAX_BYTES) throw new DomainError('INPUT_TOO_LARGE', '阶段输入超过 Maka 正式版 0.2.0 的 48 KiB UTF-8 文本上限。请缩小需求、产物或候选补丁后重试；完整审核依据不能截断。', 413, { actualBytes, maxBytes: MAKA_TURN_TEXT_MAX_BYTES });
+}
 type Host = { rootId: string; request(operation: string, input: unknown, timeout?: number): Promise<any>; status(): Promise<any>; openSessionSubscription(input: unknown): Promise<any>; close(): Promise<void> };
 export class MakaBackend implements ExecutionBackend {
   private connection?: Host;
@@ -75,6 +80,7 @@ export class MakaBackend implements ExecutionBackend {
     });
   }
   async prepare(input: FrozenInput): Promise<ExecutionRef> {
+    assertPromptSize(input.prompt);
     const host = await this.connect();
     const sessionId = input.attemptId, turnId = id();
     await host.request('session.create', { sessionId, workspace: { kind: 'host_path', path: input.workspace },
@@ -83,6 +89,7 @@ export class MakaBackend implements ExecutionBackend {
     return { backend: 'maka', rootId: host.rootId, sessionId, turnId };
   }
   async start(ref: ExecutionRef, input: FrozenInput): Promise<ExecutionSnapshot> {
+    assertPromptSize(input.prompt);
     const host = await this.connect(); this.checkRoot(host, ref);
     const result = await host.request('turn.start', { sessionId: ref.sessionId, turnId: ref.turnId, content: { text: input.prompt, attachments: [] }, maxSteps: input.maxSteps });
     if (result.kind !== 'started') throw new DomainError('EXECUTION_BLOCKED', '底座拒绝启动阶段');

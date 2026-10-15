@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
+import type { ReviewContext, ReviewReport } from '../review-policy/index.ts';
 
 export const id = () => randomUUID();
 export const hash = (value: string) => createHash('sha256').update(value).digest('hex');
@@ -23,17 +24,17 @@ export interface WorkflowRun extends Entity { workItemId: string; workflowId: st
 export interface InputBinding { logicalId: string; artifactRevisionId: string; contentHash: string }
 export interface NodeRun extends Entity { workflowRunId: string; nodeId: string; name: string; type: NodeType; execution: ExecutionState; gate: GateState; freshness: 'fresh' | 'stale'; acceptance: 'pending' | 'accepted'; currentAttemptId?: string; blockers: string[]; error?: string }
 export interface ExecutionRef { backend: 'maka' | 'sandbox'; rootId: string; sessionId: string; turnId: string; runId?: string }
-export interface Attempt extends Entity { nodeRunId: string; number: number; inputHash: string; inputs: InputBinding[]; requirementRevisionId?: string; guidance?: ProjectGuidance; clarificationSessionId?: string; clarificationQuestions?: ClarificationQuestion[]; target: ModelTarget; prompt: string; codeBaseline: string; candidateId?: string; execution: ExecutionState; bindingId?: string; error?: string; output?: string; startedAt?: string; finishedAt?: string; usage?: { inputTokens: number; outputTokens: number; costUsd: number | null } }
+export interface Attempt extends Entity { nodeRunId: string; number: number; inputHash: string; inputs: InputBinding[]; requirementRevisionId?: string; guidance?: ProjectGuidance; clarificationSessionId?: string; clarificationQuestions?: ClarificationQuestion[]; review?: ReviewContext; reviewReport?: ReviewReport; target: ModelTarget; prompt: string; codeBaseline: string; candidateId?: string; execution: ExecutionState; bindingId?: string; error?: string; output?: string; startedAt?: string; finishedAt?: string; usage?: { inputTokens: number; outputTokens: number; costUsd: number | null } }
 export interface ExecutionBinding extends Entity { attemptId: string; ref: ExecutionRef; parentBindingId?: string; kind: 'initial' | 'resume'; cursor?: string }
 export interface Artifact extends Entity { workItemId: string; logicalId: string; type: string; revisionIds: string[]; currentRevisionId: string; acceptedRevisionId?: string; owner: string }
-export interface ArtifactRevision extends Entity { artifactId: string; content: string; contentHash: string; originAttemptId?: string; requirementRevisionId?: string; guidanceHash?: string; supersedesRevisionId?: string; clarificationSessionId?: string; inputs: InputBinding[]; acceptance: 'candidate' | 'accepted' | 'rejected'; reviewed: boolean }
+export interface ArtifactRevision extends Entity { artifactId: string; content: string; contentHash: string; originAttemptId?: string; requirementRevisionId?: string; guidanceHash?: string; supersedesRevisionId?: string; clarificationSessionId?: string; candidateId?: string; codeHash?: string; inputs: InputBinding[]; acceptance: 'candidate' | 'accepted' | 'rejected'; reviewed: boolean; reviewGroupId?: string }
 export interface ClarificationQuestion { id: string; question: string; reason: string; options: string[]; answer?: string }
 export interface ClarificationSession extends Entity { workItemId: string; nodeRunId: string; sourceSpecRevisionId: string; requirementRevisionId?: string; guidanceHash: string; state: 'analyzing' | 'waiting_answers' | 'completed' | 'stale'; questions: ClarificationQuestion[]; attemptIds: string[]; resultSpecRevisionId?: string }
 export interface ClarificationDraft extends Entity { sessionId: string; answers: Record<string, string> }
-export interface Finding extends Entity { workItemId: string; nodeRunId: string; targetHash: string; severity: 'blocker' | 'warning'; location: string; body: string; status: 'open' | 'resolved' | 'waived'; reason?: string; evidenceId?: string }
+export interface Finding extends Entity { workItemId: string; nodeRunId: string; targetHash: string; targetLogicalId?: string; originAttemptId?: string; resolvedByAttemptId?: string; severity: 'blocker' | 'warning'; location: string; body: string; status: 'open' | 'resolved' | 'waived'; reason?: string; evidenceId?: string }
 export interface Decision extends Entity { workItemId: string; targetId: string; targetHash: string; actor: string; kind: 'accept' | 'reject' | 'waive'; reason: string }
 export interface Comment extends Entity { artifactRevisionId: string; author: string; anchor: string; body: string }
-export interface Candidate extends Entity { workItemId: string; workspace: string; branch: string; baseCommit: string; checkpointCommit: string; attemptId: string; contentHash?: string; reviewedHash?: string; status: 'working' | 'ready' | 'accepted'; summary?: string }
+export interface Candidate extends Entity { workItemId: string; workspace: string; branch: string; baseCommit: string; checkpointCommit: string; attemptId: string; contentHash?: string; reviewedHash?: string; reviewGroupId?: string; status: 'working' | 'ready' | 'accepted'; summary?: string }
 export interface Evidence extends Entity { workItemId: string; candidateId: string; targetHash: string; command: VerificationCommand; commandHash: string; exitCode: number | null; stdout: string; stderr: string; environment: string; status: 'passed' | 'failed'; stale: boolean; startedAt: string; finishedAt: string }
 export interface TaskRun extends Entity { nodeRunId: string; attemptId: string; taskId: string; name: string; dependsOn: string[]; condition: string; state: 'pending' | 'running' | 'tested' | 'verified' | 'failed'; checkpointCommit?: string }
 export interface Interaction extends Entity { attemptId: string; ref: ExecutionRef; backendInteractionId: string; request: unknown; state: 'pending' | 'answered' | 'closed' }
@@ -64,6 +65,9 @@ export const defaultWorkflow = (): WorkflowDefinition => ({
   ],
 });
 
+// Accepted inputs are reference material, not additional subjects to certify.
+export function reviewSubjects(node: WorkflowNode) { return node.inputs.filter(input => !input.endsWith('@accepted')).map(input => input.split('@')[0]); }
+
 export function compileWorkflow(def: WorkflowDefinition, existing: string[] = []) {
   const errors: { nodeId: string; code: string; message: string }[] = [];
   const ids = new Set<string>(), produced = new Set(existing);
@@ -73,11 +77,12 @@ export function compileWorkflow(def: WorkflowDefinition, existing: string[] = []
     ids.add(node.id);
     for (const input of node.inputs) if (!produced.has(input.split('@')[0])) errors.push({ nodeId: node.id, code: 'INPUT_MISSING', message: `上游未提供 ${input}` });
     if (['agent', 'clarify', 'review'].includes(node.type) && !node.role) errors.push({ nodeId: node.id, code: 'ROLE_MISSING', message: '模型节点需要配置角色' });
+    if (node.type === 'review' && !reviewSubjects(node).length) errors.push({ nodeId: node.id, code: 'REVIEW_SUBJECT_MISSING', message: '复核必须声明当前候选产物，已接纳输入仅作为参考依据' });
     if (node.type === 'clarify' && (node.inputs.length !== 1 || node.inputs[0] !== 'spec' || node.outputs.length !== 1 || node.outputs[0] !== 'spec' || node.role !== 'analyst')) errors.push({ nodeId: node.id, code: 'CLARIFY_INVALID', message: '需求澄清使用 analyst 角色，读取候选 spec 并修订 spec' });
     if (def.requireReview && (node.type === 'agent' || node.type === 'clarify') && node.outputs.length) {
       const later = def.nodes.slice(index + 1);
       for (const output of node.outputs) {
-        const reviewIndex = later.findIndex(x => x.type === 'review' && x.inputs.some(i => i.split('@')[0] === output));
+        const reviewIndex = later.findIndex(x => x.type === 'review' && reviewSubjects(x).includes(output));
         const consumeIndex = later.findIndex(x => x.type === 'agent' && x.inputs.some(i => i.split('@')[0] === output));
         if (reviewIndex < 0 || (consumeIndex >= 0 && consumeIndex < reviewIndex)) errors.push({ nodeId: node.id, code: 'REVIEW_MISSING', message: `${output} 需要在后续模型消费前独立复核` });
       }

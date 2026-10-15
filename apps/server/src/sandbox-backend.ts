@@ -2,6 +2,7 @@ import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { hash, type ExecutionRef, type ModelTarget } from '../../../packages/domain/index.ts';
 import type { BackendCapabilities, ExecutionBackend, ExecutionSnapshot, ExecutionUpdate, FrozenInput, StageOutput } from '../../../packages/execution-contract/index.ts';
+import type { ReviewReport } from '../../../packages/review-policy/index.ts';
 
 export const sandboxTargets: ModelTarget[] = ['analyst', 'developer', 'reviewer'].map(role => ({ backend: 'sandbox', connectionId: 'local-contract-fixture', connectionSlug: '本地验收后端', model: role }));
 const csvImplementation = `export function parseCsv(text) {
@@ -56,7 +57,13 @@ export class SandboxBackend implements ExecutionBackend {
       else output = `# ${input.node.name}\n\n这是本地验收产物，输入哈希 ${input.inputHash}。\n`;
       artifacts.push({ logicalId, type: logicalId, content: output });
     }
-    const output: StageOutput = { summary: input.node.type === 'review' ? '本地契约复核完成；真实模型复核尚未执行。' : '验收后端产出候选，等待工程规则检查。', artifacts, findings };
+    let review: ReviewReport | undefined;
+    if (input.review) {
+      const context = input.review;
+      const evidence = context.sources.filter(s => s.content.trim()).map(s => ({ sourceId: s.id, quote: s.content.trim().slice(0, 200) }));
+      review = { version: 1, groupId: context.groupId, perspective: context.perspective, verdict: findings.some(f => f.severity === 'blocker') ? 'revise' : 'pass', summary: '仅验证双视角协议与证据绑定；不代表真实模型审核质量。', checks: context.criteria.map(c => ({ criterionId: c.id, result: findings.some(f => f.severity === 'blocker') ? 'fail' : 'pass', explanation: `确定性契约检查：${c.instruction}`, evidence, counterexample: { scenario: '契约夹具检查未解决的 TODO 或需求占位符；真实反例由接入模型独立构造。', outcome: findings.some(f => f.severity === 'blocker') ? 'reproduced' : 'ruled_out', reason: '仅扫描当前冻结材料中的未决占位符；不声称完成语义审核。' } })), resolutions: context.priorFindings.map(f => ({ findingId: f.id, result: 'fixed', evidence, explanation: '确定性夹具模拟修复复验，仅用于测试工程协议。' })) };
+    }
+    const output: StageOutput = { summary: input.node.type === 'review' ? '本地契约复核完成；真实模型复核尚未执行。' : '验收后端产出候选，等待工程规则检查。', artifacts, findings, review };
     const snapshot: ExecutionSnapshot = { state: 'completed', ref, terminalEventId: hash(JSON.stringify(output)), output: JSON.stringify(output), usage: { inputTokens: 0, outputTokens: 0, costUsd: 0 } };
     this.results.set(ref.sessionId, snapshot); return snapshot;
   }

@@ -17,3 +17,16 @@ test('任务 ID、缺失依赖和环受到校验', () => {
   assert.throws(() => parseTasks('- [ ] T001 依赖 T002\n- [ ] T002 依赖 T001'));
   assert.throws(() => parseTasks('- [ ] T001 实现\n- [ ] T001 重复'));
 });
+test('仅将已接纳产物作为参考材料的审核不能替代该产物的首次审核', () => {
+  const flow = defaultWorkflow();
+  const sourceOnly = {
+    ...flow, requireClarification: false, requiredVerification: [],
+    nodes: [flow.nodes.find(node => node.id === 'specify')!, {
+      ...flow.nodes.find(node => node.id === 'review-spec')!, inputs: ['spec@accepted'],
+    }],
+  };
+  const result = compileWorkflow(sourceOnly);
+  assert.equal(result.valid, false);
+  assert.ok(result.errors.some(error => error.nodeId === 'specify' && error.code === 'REVIEW_MISSING'));
+  assert.ok(result.errors.some(error => error.nodeId === 'review-spec' && error.code === 'REVIEW_SUBJECT_MISSING'));
+});
