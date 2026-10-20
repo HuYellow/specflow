@@ -1,10 +1,36 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, rm, realpath, symlink } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { tmpdir } from 'node:os';
 import { assertMakaReleaseVersion, verifyMakaRelease, MAKA_RELEASE } from '../packages/maka-adapter/release-policy.ts';
+
+test('源码目录别名和内部依赖链接可解析，外部依赖链接仍被拒绝', async () => {
+  const { runtimeClosure } = await import(pathToFileURL(resolve('scripts/maka-source.mjs')).href);
+  const root = await mkdtemp(join(tmpdir(), 'specflow-maka-closure-alias-'));
+  const source = join(root, 'source'), alias = join(root, 'source-alias');
+  const entry = join(source, 'node_modules/@maka/runtime-host');
+  const internal = join(source, 'packages/dependency'), external = join(root, 'outside');
+  const linkType = process.platform === 'win32' ? 'junction' : 'dir';
+  try {
+    for (const [path, pkg] of [
+      [entry, { name: '@maka/runtime-host', version: '0.1.0', dependencies: { dependency: '1' } }],
+      [internal, { name: 'dependency', version: '1.0.0' }],
+      [external, { name: 'escaped', version: '1.0.0' }],
+    ] as const) { await mkdir(path, { recursive: true }); await writeFile(join(path, 'package.json'), JSON.stringify(pkg)); }
+    await symlink(source, alias, linkType);
+    await symlink(internal, join(source, 'node_modules/dependency'), linkType);
+    const closure = await runtimeClosure(alias, '@maka/runtime-host');
+    assert.deepEqual(closure.map((e: any) => e.pkg.name), ['@maka/runtime-host', 'dependency']);
+    assert.equal(closure[0].path, await realpath(entry));
+    assert.equal(closure[0].dependencies[0].path, await realpath(internal));
+
+    await symlink(external, join(source, 'node_modules/escaped'), linkType);
+    await writeFile(join(entry, 'package.json'), JSON.stringify({ name: '@maka/runtime-host', version: '0.1.0', dependencies: { escaped: '1' } }));
+    await assert.rejects(runtimeClosure(alias, '@maka/runtime-host'), /Maka dependency escapes source tree: escaped/);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
 
 test('Maka 发布策略拒绝 dev、nightly、alpha、beta、RC 与占位版本', () => {
   for (const version of ['0.2.0-dev.78.20261010', '0.2.0-nightly.1', '0.0.0-alpha.0', '0.1.0-beta.1', '0.2.0-rc.1', '0.0.0-placeholder.2', 'latest', '^0.2.0']) assert.throws(() => assertMakaReleaseVersion(version, '0.2.0'), /禁止使用/);
@@ -25,7 +51,7 @@ test('源码运行包只收集可解析的生产依赖，保留嵌套版本并�
     ] as const) { await mkdir(path, { recursive: true }); await writeFile(join(path, 'package.json'), JSON.stringify(pkg)); }
     const closure = await runtimeClosure(root, '@maka/runtime-host');
     assert.deepEqual(closure.map((e: any) => e.pkg.name), ['@maka/runtime-host', 'dependency', 'nested']);
-    assert.equal(closure[1].dependencies[0].path, nested);
+    assert.equal(closure[1].dependencies[0].path, await realpath(nested));
     await writeFile(join(first, 'package.json'), JSON.stringify({ name: 'dependency', dependencies: { requiredMissing: '1' } }));
     await assert.rejects(runtimeClosure(root, '@maka/runtime-host'), /Required Maka runtime dependency missing/);
   } finally { await rm(root, { recursive: true, force: true }); }

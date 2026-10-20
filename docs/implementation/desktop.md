@@ -1,12 +1,12 @@
 # SpecFlow 桌面安装、更新与发布
 
-更新日期：2026-10-15。目标平台为 Windows x64、macOS Apple Silicon 和 macOS Intel。桌面版使用独立 Electron 窗口，自动管理本地工程服务与 Maka Runtime Host。
+更新日期：2026-10-20。目标平台为 Windows x64、macOS Apple Silicon 和 macOS Intel。桌面版使用独立 Electron 窗口，自动管理本地工程服务与 Maka Runtime Host。
 
 当前内置 Maka 0.2.0 从 Apache 签名正式源码发行版构建，仅包含 Runtime Host 及生产依赖。源码、编译器、测试、CLI/Eval 和构建缓存不进入桌面包；禁止使用 dev、nightly、snapshot、RC、占位包或其他开发构建替代正式版本。当前继续使用 Maka，独立底座选择、切换和新增适配器暂缓。详见 [运行时管理](maka-runtime-management.md)。
 
 ## 获取安装包
 
-正式安装包入口为 [GitHub Releases](https://github.com/HuYellow/specflow/releases)，最新正式版本入口为 [Latest Release](https://github.com/HuYellow/specflow/releases/latest)。**截至 2026-10-15，仓库尚未发布 GitHub Release**；首次正式发布前，可使用维护者提供的本地构建产物。Actions artifact 是构建产物，只有正式 Release 中的完整资产才构成应用更新源。
+正式安装包入口为 [GitHub Releases](https://github.com/HuYellow/specflow/releases)，最新正式版本入口为 [Latest Release](https://github.com/HuYellow/specflow/releases/latest)。发行页提供平台安装包、应用更新元数据和 `SHA256SUMS.txt` 校验文件。Actions artifact 是构建产物，只有正式 Release 中的完整资产才构成应用更新源。
 
 | 系统与架构 | 文件 | 安装方式 |
 | --- | --- | --- |

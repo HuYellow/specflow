@@ -24,6 +24,9 @@ const inside = (parent, target) => { const r = relative(parent, target); return 
 // Resolve the installed, lockfile-controlled production graph. Optional TypeScript peers and
 // development workspaces are excluded rather than relying on npm ls's development diagnostics.
 export async function runtimeClosure(source, entryName) {
+  // Compare dependencies against the same canonical root on macOS /var aliases
+  // and when callers enter the source tree through a directory link.
+  source = await realpath(source);
   const queue = [];
   const visited = new Map();
   async function findPackage(from, name, optional) {
@@ -78,8 +81,8 @@ export async function buildSourceRelease(root, release) {
   if (!verified.includes(`[GNUPG:] VALIDSIG ${release.source.signerFingerprint} `)) throw new Error('Official Maka signer does not match pinned release key.');
   console.log(`Verified official Apache Maka ${release.packageVersion}: SHA-512 and release signature`);
 
-  const source = join(cache, `apache-maka-${release.source.releaseVersion}`);
   await run('tar', ['-xf', archive, '-C', cache], cache, env);
+  const source = await realpath(join(cache, `apache-maka-${release.source.releaseVersion}`));
   const sourceManifest = JSON.parse(await readFile(join(source, 'package.json'), 'utf8'));
   if (sourceManifest.version !== release.packageVersion || sourceManifest.packageManager !== `npm@${release.source.npmVersion}`) throw new Error('Official source identity or npm toolchain differs from approval.');
   const systemNpm = process.env.npm_execpath;

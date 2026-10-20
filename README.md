@@ -18,7 +18,7 @@ SpecFlow 是面向本地 Git 仓库的软件工程工作台。你可以在独立
 
 从 [GitHub Releases](https://github.com/HuYellow/specflow/releases) 选择版本，下载与你的系统和架构匹配的安装包。
 
-**发布状态：截至 2026-10-15，仓库尚未发布 GitHub Release。** 当前可由维护者从源码生成安装包；首次正式发布后，以上入口才会提供下载，应用内更新也才有可查询的版本。
+最新正式版本见 [Latest Release](https://github.com/HuYellow/specflow/releases/latest)。发行资产包含平台安装包、应用更新元数据和 `SHA256SUMS.txt` 校验文件。
 
 | 系统 | 安装文件 | 安装方式 |
 | --- | --- | --- |
@@ -28,7 +28,7 @@ SpecFlow 是面向本地 Git 仓库的软件工程工作台。你可以在独立
 
 安装包包含 Electron、Node.js 24、npm、Maka 0.2.0 Runtime Host 和工作区扩展，使用时无需手动启动 Web 服务或安装 Node.js、GPG。**本机仍需安装 Git**；运行项目验证命令还需要该项目自己的工具链。
 
-macOS 当前尚未配置安装包发布签名和 Apple 公证。构建、数据位置与安装问题见 [桌面安装、更新与发布说明](docs/implementation/desktop.md)。
+当前安装包尚未配置 Windows Authenticode、macOS Developer ID 签名及 Apple 公证。构建、数据位置与安装问题见 [桌面安装、更新与发布说明](docs/implementation/desktop.md)。
 
 ## 检查与安装更新
 
