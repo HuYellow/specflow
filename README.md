@@ -20,13 +20,11 @@ SpecFlow 是面向本地 Git 仓库的软件工程工作台。你可以在独立
 
 最新正式版本见 [Latest Release](https://github.com/HuYellow/specflow/releases/latest)。发行资产包含平台安装包、应用更新元数据和 `SHA256SUMS.txt` 校验文件。
 
-**0.1.3 为 Windows x64 首发版本。** macOS 双架构原生打包验收尚未全部通过，本次暂不提供。
-
-| 系统 | 当前安装文件 | 安装方式 |
+| 系统 | 安装文件 | 安装方式 |
 | --- | --- | --- |
-| Windows x64 | `SpecFlow-0.1.3-win-x64.exe` | 运行安装向导，选择安装目录，从桌面或开始菜单启动 |
-| macOS Apple Silicon | 暂未发布 | 待 macOS 双架构验收完成 |
-| macOS Intel | 暂未发布 | 待 macOS 双架构验收完成 |
+| Windows x64 | `SpecFlow-<版本>-win-x64.exe` | 运行安装向导，选择安装目录，从桌面或开始菜单启动 |
+| macOS Apple Silicon | `SpecFlow-<版本>-mac-arm64.dmg` | 打开 DMG，将 SpecFlow 拖入 Applications |
+| macOS Intel | `SpecFlow-<版本>-mac-x64.dmg` | 打开 DMG，将 SpecFlow 拖入 Applications |
 
 安装包包含 Electron、Node.js 24、npm、Maka 0.2.0 Runtime Host 和工作区扩展，使用时无需手动启动 Web 服务或安装 Node.js、GPG。**本机仍需安装 Git**；运行项目验证命令还需要该项目自己的工具链。
 

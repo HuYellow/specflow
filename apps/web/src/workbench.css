@@ -158,14 +158,14 @@ main { padding: 22px 30px 12px; max-width: 1760px; }
 .settings-section>p { font-size: 12px; color: var(--text-secondary); margin: 8px 0 14px; }
 @media (min-width: 1600px) { main { padding: 26px 36px 12px; } }
 @media (min-width: 901px) and (max-width: 1119px) {
-  .sidebar { width: 64px; padding-inline: 8px; }
+  .sidebar:not(.is-expanded) { width: 64px; padding-inline: 8px; }
   .main-shell { margin-left: 64px; }
-  .brand { padding: 0; justify-content: center; }
-  .sidebar .brand>span:last-child, .sidebar .workspace-label, .sidebar .section-label, .sidebar .workspace-selected-name, .sidebar .workspace-toggle-icon, .sidebar .workspace-directory, .sidebar .item-search, .sidebar .sidebar-empty, .sidebar .item>span, .sidebar .item>svg:last-child, .sidebar .artifact-nav span, .sidebar .sidebar-bottom>button, .sidebar .host-status>span:not(:first-child) { display: none; }
-  .sidebar .workspace-selector { display: flex; justify-content: center; padding: 12px 4px; margin-top: 28px; }
-  .sidebar .item-list { margin-top: 22px; }
-  .sidebar .item, .sidebar .artifact-nav button { justify-content: center; gap: 0; }
-  .sidebar .host-status { justify-content: center; }
+  .sidebar:not(.is-expanded) .brand { padding: 0; justify-content: center; }
+  .sidebar:not(.is-expanded) .brand>span:last-child, .sidebar:not(.is-expanded) .workspace-label, .sidebar:not(.is-expanded) .section-label, .sidebar:not(.is-expanded) .workspace-selected-name, .sidebar:not(.is-expanded) .workspace-toggle-icon, .sidebar:not(.is-expanded) .workspace-directory, .sidebar:not(.is-expanded) .item-search, .sidebar:not(.is-expanded) .sidebar-empty, .sidebar:not(.is-expanded) .item>span, .sidebar:not(.is-expanded) .item>svg:last-child, .sidebar:not(.is-expanded) .artifact-nav span, .sidebar:not(.is-expanded) .sidebar-bottom>button, .sidebar:not(.is-expanded) .host-status>span:not(:first-child) { display: none; }
+  .sidebar:not(.is-expanded) .workspace-selector { display: flex; justify-content: center; padding: 12px 4px; margin-top: 28px; }
+  .sidebar:not(.is-expanded) .item-list { margin-top: 22px; }
+  .sidebar:not(.is-expanded) .item, .sidebar:not(.is-expanded) .artifact-nav button { justify-content: center; gap: 0; }
+  .sidebar:not(.is-expanded) .host-status { justify-content: center; }
   main { padding-inline: 24px; }
 }
 @media (max-width: 900px) {

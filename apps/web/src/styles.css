@@ -70,7 +70,7 @@
 button:not(:disabled){transition:background-color .15s,border-color .15s,color .15s}.item:hover:not(.active),.artifact-nav button:hover:not(.active){background:#e1e9de}
 [role=tabpanel]:focus-visible{outline:2px solid #2e8375;outline-offset:5px;border-radius:9px}
 
-@media(max-width:900px){
+@media(max-width:1119px){
   .navigation-toggle{display:grid;flex-shrink:0}.item-search{display:none}
   .navigation-backdrop{display:block;position:fixed;inset:0;background:#12282166;z-index:39;cursor:default}
   .sidebar.is-expanded{width:min(300px,calc(100vw - 32px));padding:28px 18px 20px;z-index:40;box-shadow:8px 0 36px #123c2b22}

@@ -176,7 +176,7 @@ export default function App() {
     window.addEventListener('popstate', pop); return () => window.removeEventListener('popstate', pop);
   }, []);
   useEffect(() => {
-    const media = window.matchMedia('(min-width: 901px)');
+    const media = window.matchMedia('(min-width: 1120px)');
     const resize = () => { if (media.matches) setSidebarOpen(false); };
     media.addEventListener('change', resize); return () => media.removeEventListener('change', resize);
   }, []);
