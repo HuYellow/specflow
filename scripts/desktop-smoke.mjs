@@ -82,6 +82,7 @@ try {
   const errors = [];
   page.on('pageerror', error => errors.push(String(error)));
   await page.getByRole('heading', { name: '为现有项目增加 CSV 导入' }).waitFor({ timeout: 60000 });
+  record.viewport = await page.evaluate(() => ({ width: innerWidth, height: innerHeight }));
   const url = new URL(page.url()).origin;
   assert.match(url, /^http:\/\/127\.0\.0\.1:\d+$/);
   assert.equal((await fetch(`${url}/api/bootstrap`)).status, 403);
@@ -112,6 +113,8 @@ try {
   const bootstrap = await page.evaluate(async () => await (await fetch('/api/bootstrap')).json());
   const repositoryPath = bootstrap.projects[0].rootPath;
   await application.evaluate(({ dialog }, path) => { dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [path] }); }, repositoryPath);
+  const navigationToggle = page.getByRole('button', { name: '展开工程导航', exact: true });
+  if (await navigationToggle.isVisible()) await navigationToggle.click();
   await page.getByRole('button', { name: '打开 Git 仓库', exact: true }).click();
   await page.getByRole('button', { name: '选择仓库文件夹' }).click();
   const repositoryInput = page.getByRole('dialog').getByRole('textbox').first();

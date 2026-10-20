@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
+import { join, parse, resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '..');
 const require = createRequire(import.meta.url);
@@ -66,12 +66,16 @@ await run(makensis.path, [
 ], makensis.env);
 
 const checks = [];
+// NSIS validates /D= before .onInit and ignores drives that do not exist. Use
+// mounted roots for executable checks; the in-memory cases above still cover H:.
+const systemDriveRoot = parse(resolve(process.env.SystemRoot ?? process.execPath)).root;
+const workspaceDriveRoot = parse(root).root;
 const commandlineCases = interactive ? [['interactive selection', undefined, undefined]] : [
-  ['silent drive root', 'C:\\', 'C:\\specflow'],
-  ['silent H drive root', 'H:\\', 'H:\\specflow'],
-  ['silent custom folder', 'H:\\apps', 'H:\\apps'],
-  ['silent existing specflow folder', 'H:\\specflow', 'H:\\specflow'],
-  ['silent Chinese and spaces', 'H:\\我的 应用\\', 'H:\\我的 应用'],
+  ['silent system drive root', systemDriveRoot, join(systemDriveRoot, 'specflow')],
+  ['silent workspace drive root', workspaceDriveRoot, join(workspaceDriveRoot, 'specflow')],
+  ['silent custom folder', join(workspaceDriveRoot, 'apps'), join(workspaceDriveRoot, 'apps')],
+  ['silent existing specflow folder', join(workspaceDriveRoot, 'specflow'), join(workspaceDriveRoot, 'specflow')],
+  ['silent Chinese and spaces', `${join(workspaceDriveRoot, '我的 应用')}\\`, join(workspaceDriveRoot, '我的 应用')],
 ];
 for (const [name, input, expected] of commandlineCases) {
   // NSIS requires /D= to be the final parameter without quotes, even for spaces.
