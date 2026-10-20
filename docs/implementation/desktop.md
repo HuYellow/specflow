@@ -8,11 +8,13 @@
 
 正式安装包入口为 [GitHub Releases](https://github.com/HuYellow/specflow/releases)，最新正式版本入口为 [Latest Release](https://github.com/HuYellow/specflow/releases/latest)。发行页提供平台安装包、应用更新元数据和 `SHA256SUMS.txt` 校验文件。Actions artifact 是构建产物，只有正式 Release 中的完整资产才构成应用更新源。
 
-| 系统与架构 | 文件 | 安装方式 |
+**0.1.3 仅发布已完成验收的 Windows x64 安装包。** macOS 双架构原生打包验收尚未全部通过，本次不提供 macOS 安装包或更新清单。
+
+| 系统与架构 | 当前文件 | 安装方式 |
 | --- | --- | --- |
 | Windows x64 | `SpecFlow-<版本>-win-x64.exe` | 运行安装向导，可选择安装目录并创建桌面、开始菜单快捷方式 |
-| macOS Apple Silicon | `SpecFlow-<版本>-mac-arm64.dmg` | 打开 DMG，将 SpecFlow 拖入 Applications |
-| macOS Intel | `SpecFlow-<版本>-mac-x64.dmg` | 打开 DMG，将 SpecFlow 拖入 Applications |
+| macOS Apple Silicon | 暂未发布 | 待 macOS 双架构验收完成 |
+| macOS Intel | 暂未发布 | 待 macOS 双架构验收完成 |
 
 macOS 同时生成同架构的 `.zip`，供更新器使用或手动解压安装。Windows 的 `release/win-unpacked/SpecFlow.exe` 供开发验收使用，正式用户应通过安装程序安装。安装和覆盖升级无需先卸载旧版。
 
@@ -130,7 +132,7 @@ CI Secrets 配置如下；证书链接或其 Base64 内容由 electron-builder �
 
 缺少签名与公证配置的 macOS 应用使用检查更新与手动安装路径，不提供原位更新。若发行方要求 macOS 必须签名和公证，可设置仓库变量 `SPECFLOW_REQUIRE_SIGNED_RELEASE=true`；此时缺少凭据将使构建明确失败。
 
-Release 必须完整保留以下资产，不能只上传可见安装包：
+三平台 Release 必须完整保留以下资产，不能只上传可见安装包：
 
 | 资产 | 用途 |
 | --- | --- |
@@ -142,6 +144,8 @@ Release 必须完整保留以下资产，不能只上传可见安装包：
 | `.blockmap` | 更新器生成的分块下载元数据 |
 
 工作流合并两个 macOS 构建生成的更新元数据，避免上传同名文件时覆盖另一个架构。更新版本必须高于用户当前安装版本；相同版本重新上传安装包不会构成新版本更新。发布权限、证书与网络均需在实际 CI 环境中配置，本地工作流文件的存在不能代替远端成功发布记录。
+
+允许先发布完成验收的平台，但必须在发行说明中明确平台范围，并保留该平台的全部更新资产。0.1.3 采用 Windows 首发：从对应标签的 Windows CI 任务获取通过全量测试、安装目录检查和打包验收的产物，校验版本、安装包 SHA-512 与大小后，上传 `.exe`、`.exe.blockmap`、`latest.yml` 和 `SHA256SUMS.txt`。不上传尚未通过验收的 macOS 产物或 `latest-mac.yml`，也不将整个三平台工作流描述为成功。自动三平台发布流程继续保留，macOS 通过验收后随更高版本发布。
 
 发布先创建草稿，再上传完整资产并公开。上传失败后可重跑任务，复用同标签草稿；已公开版本拒绝覆盖，修复应发布更高版本。
 
