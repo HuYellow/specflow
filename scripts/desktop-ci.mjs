@@ -164,12 +164,20 @@ async function publish(ctx) {
   console.log(`Published ${released.html_url}; uploaded SHA-256 checksums verified.`);
 }
 
+export async function readWindowsSignature(installer) {
+  const env = { ...process.env, SPECFLOW_INSTALLER: installer };
+  // A pwsh runner exports its module directories. Windows PowerShell 5 cannot
+  // load the PowerShell 7 security module; let it restore its own built-in paths.
+  for (const key of Object.keys(env)) if (key.toLowerCase() === 'psmodulepath') delete env[key];
+  const status = await exec('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', "$ErrorActionPreference = 'Stop'; $signature = Get-AuthenticodeSignature -LiteralPath $env:SPECFLOW_INSTALLER; $signature.Status.ToString()"], { windowsHide: true, env });
+  return status.stdout.trim() === 'Valid';
+}
+
 async function recordBuild(ctx) {
   const record = { version: ctx.version, sourceSha: ctx.sourceSha, platform: process.platform, arch: process.arch, signed: false, notarized: false };
   if (process.platform === 'win32') {
     const installer = join(root, 'release', `SpecFlow-${ctx.version}-win-${process.arch}.exe`);
-    const status = await exec('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', '$signature = Get-AuthenticodeSignature -LiteralPath $env:SPECFLOW_INSTALLER; $signature.Status.ToString()'], { windowsHide: true, env: { ...process.env, SPECFLOW_INSTALLER: installer } });
-    record.signed = status.stdout.trim() === 'Valid';
+    record.signed = await readWindowsSignature(installer);
   } else if (process.platform === 'darwin') {
     const application = join(root, `release/${process.arch === 'arm64' ? 'mac-arm64' : 'mac'}/SpecFlow.app`);
     const signature = await exec('codesign', ['-dv', '--verbose=4', application]).catch(() => ({ stderr: '' }));

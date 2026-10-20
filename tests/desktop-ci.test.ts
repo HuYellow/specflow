@@ -8,6 +8,18 @@ const config = { schemaVersion: 1, provider: 'github', owner: 'HuYellow', repo: 
 const sourceSha = 'a'.repeat(40);
 const base = { config, version: '0.1.4', lockVersion: '0.1.4', rootLockVersion: '0.1.4', repository: 'HuYellow/specflow', sourceSha, eventName: 'push', refType: 'branch', refName: 'main', releases: [{ tag_name: 'desktop-v0.1.3', draft: false, prerelease: false }] };
 
+test('Windows signature inspection loads native modules even with an incompatible inherited search path', { skip: process.platform !== 'win32' }, async () => {
+  const original = process.env.PSModulePath;
+  process.env.PSModulePath = resolve('.tools/nonexistent-powershell-modules');
+  try {
+    assert.equal(typeof await automation.readWindowsSignature(process.execPath), 'boolean');
+    await assert.rejects(automation.readWindowsSignature(resolve('.tools/no-such-installer.exe')));
+  } finally {
+    if (original == null) delete process.env.PSModulePath;
+    else process.env.PSModulePath = original;
+  }
+});
+
 test('main only publishes a new stable version, with the previous public release as changelog baseline', () => {
   const plan = automation.planDesktopRelease({ ...base, releases: [...base.releases,
     { tag_name: 'desktop-v0.1.99', draft: true, prerelease: false },
