@@ -75,6 +75,10 @@ test('release assembly rejects altered installers, failed package smoke tests an
     await writeFile(smoke, JSON.stringify({ passed: false, packaged: true, platform: 'win32', arch: 'x64' }));
     await assert.rejects(release.assembleDesktopRelease(data), /smoke test did not pass/);
     await writeFile(smoke, JSON.stringify({ passed: true, packaged: true, platform: 'win32', arch: 'x64' }));
+    const blockmap = `${path}.blockmap`;
+    await rm(blockmap);
+    await assert.rejects(release.assembleDesktopRelease(data), /blockmap is missing/);
+    await writeFile(blockmap, 'blockmap');
     await rm(path);
     await assert.rejects(release.assembleDesktopRelease(data), /Missing release installer/);
   } finally { await rm(data.directory, { recursive: true, force: true }); }

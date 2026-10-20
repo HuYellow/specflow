@@ -115,14 +115,34 @@ Node.js 运行时来自 nodejs.org，构建时校验官方 `SHASUMS256.txt`，�
 
 维护者迁移或 fork 仓库时，应先修改此配置，使安装包内置的更新源与实际发布仓库一致，再构建发布。现有安装版继续查询构建时的发布源；仅修改仓库配置不会改变已经安装的应用。
 
-`.github/workflows/desktop.yml` 在 Windows x64、Apple Silicon Mac 和 Intel Mac 三个原生环境中测试、构建和验收。手动 `workflow_dispatch` 仅上传保留 14 天的 Actions artifacts；推送与 `package.json` 版本完全一致的 `desktop-v<版本>` 标签才创建 GitHub Release。例如版本为 `0.1.0` 时，标签为 `desktop-v0.1.0`。
+日常检查与桌面发布分别由两个工作流负责：
 
-维护者发布前应完成：
+| 工作流与触发 | 行为 |
+| --- | --- |
+| `ci.yml`：推送到 `main`、面向 `main` 的 PR、手动运行 | 在 Windows、Node.js 24 环境准备已批准的正式 Maka 运行包，执行类型检查、测试和构建 |
+| `desktop.yml`：推送到 `main` | 校验 `package.json` 与锁文件版本；当前版本高于所有已公开正式桌面版时，自动执行三平台测试、构建、打包验收和发布。同版本已公开时跳过桌面打包，普通提交仍由 CI 检查 |
+| `desktop.yml`：推送 `desktop-v<版本>` 标签 | 标签必须与源码中的正式版本完全匹配，三个原生目标通过后发布 |
+| `desktop.yml`：手动运行，`publish=false`（默认） | 执行三平台构建与验收，仅上传保留 14 天的 Actions artifacts |
+| `desktop.yml`：手动运行，`publish=true` | 仅允许从 `main` 或匹配版本的标签发布，使用与自动发布相同的版本、来源与资产检查 |
 
-1. 更新 `package.json` 和锁文件中的版本，核对更新源，完成类型检查、测试和本机打包验收。
-2. 按需要配置签名身份与证书。macOS 原位更新需要稳定的 Developer ID 签名和完整公证凭据；未配置时生成支持手动更新的安装包。Windows 建议使用 Authenticode 签名，降低系统安全提示并验证发布者身份。
-3. 提交版本变更，推送相应 `desktop-v<版本>` 标签，等待三个原生构建和验收任务通过。
-4. 核对 Release 的平台安装包、更新元数据与校验结果，再用已安装的上一版本验证“检查 → 下载 → 重启安装”。
+推荐将版本变更作为发布开关，无需手工创建标签：
+
+```powershell
+# 修复版本；新增功能可改用 minor
+npm version patch --no-git-tag-version
+git add package.json package-lock.json
+# 同时暂存本次需要发布的源码变更，再提交并推送
+git commit -m "chore(release): bump desktop version"
+git push origin main
+```
+
+版本必须为 `主版本.次版本.修订版本` 的正式数字版本。工作流在准备阶段固定本次源码的完整 commit SHA，三个原生任务均检出该提交；发布时自动创建指向同一 SHA 的 `desktop-v<版本>` 标签。已有标签必须指向该提交，禁止移动。已经公开的版本不会被覆盖或降级；修复已发布版本时应升版后重新发布。
+
+`.github/workflows/desktop.yml` 在 Windows x64、Apple Silicon Mac 和 Intel Mac 三个原生环境中分别准备正式 Maka 运行包、执行测试、构建安装包，并从源码目录以外启动打包应用完成验收。Windows 另执行 NSIS 安装目录规则检查。三个目标都成功后，发布任务才汇总安装文件和更新元数据。无法取得或适配批准的 Apache Maka 正式发行版时明确失败，不回退到开发构建。
+
+自动发布使用 Actions 自带的 `GITHUB_TOKEN`，无需新增 PAT 或发布 Token。工作流默认只有 `contents: read`，仅发布 job 获得 `contents: write`，用于创建标签和 Release。签名身份与证书按下表单独配置；macOS 原位更新需要稳定的 Developer ID 签名和完整公证凭据，未配置时生成支持手动更新的安装包。Windows 建议使用 Authenticode 签名，降低系统安全提示并验证发布者身份。
+
+更新日志由 `scripts/desktop-changelog.mjs` 根据上一个已公开正式桌面版至本次提交之间的 Git 记录自动生成：按 Conventional Commit 类型归入中文分类，保留原始提交主题，包含直接提交到仓库而未经过 PR 的变更，不调用 AI 服务。失败标签、草稿和预发布版本不作为更新日志基线。发行说明还包含平台下载表、源码提交及版本比较链接；签名、公证与更新能力根据三个原生构建实际生成的记录填写。生成的说明另保存为 `release-notes` artifact，保留 90 天。
 
 CI Secrets 配置如下；证书链接或其 Base64 内容由 electron-builder 读取，不应写入仓库：
 
@@ -144,10 +164,13 @@ Release 必须完整保留以下资产，不能只上传可见安装包：
 | `latest.yml` | Windows 正式通道版本和文件校验元数据 |
 | `latest-mac.yml` | 合并两个 macOS 架构的版本和文件校验元数据 |
 | `.blockmap` | 更新器生成的分块下载元数据 |
+| `SHA256SUMS.txt` | 所有安装文件与更新元数据的 SHA-256 校验值 |
 
-工作流合并两个 macOS 构建生成的更新元数据，避免上传同名文件时覆盖另一个架构。更新版本必须高于用户当前安装版本；相同版本重新上传安装包不会构成新版本更新。发布权限、证书与网络均需在实际 CI 环境中配置，本地工作流文件的存在不能代替远端成功发布记录。
+工作流合并两个 macOS 构建生成的更新元数据，避免上传同名文件时覆盖另一个架构。发布先创建草稿，上传完整的 13 项资产，再逐项核对 GitHub 返回的 SHA-256 digest 和文件大小；全部一致后才公开并设为 Latest。更新版本必须高于用户当前安装版本；相同版本重新上传安装包不会构成新版本更新。
 
-发布先创建草稿，再上传完整资产并公开。上传失败后可重跑任务，复用同标签草稿；已公开版本拒绝覆盖，修复应发布更高版本。
+上传失败后，可在 Actions 重跑原任务，复用同标签、同一源码 SHA 的草稿并补齐上传。已有标签或草稿对应的源码需要修改时，应提交新版本，不能移动标签或覆盖正式资产。发布后仍应使用已安装的上一版本验证“检查 → 下载 → 重启安装”。
+
+以上自动发布规则已写入工作流；新增流程尚未在远端完整运行，不能用本地检查代替远端通过记录。前文的 0.1.3 原生 CI 与线上发行记录属于既有发布。签名、公证及跨版本原位升级仍按实际验收结果记录。
 
 ## 验收范围与限制
 
@@ -174,6 +197,6 @@ Windows 桌面验收使用隔离临时用户目录；打包验收先把完整应
 
 ## Claude Code 复核入口
 
-桌面与更新实现重点为 `apps/desktop/main.ts`、`apps/desktop/updates.ts`、`apps/desktop/update-menu.ts`、`apps/desktop/preload.ts`、`scripts/desktop.mjs`、`scripts/desktop-smoke.mjs`、`scripts/desktop-release.mjs`、`electron-builder.yml`、`config/desktop-release.json`、`.github/workflows/desktop.yml`，以及 `apps/server/src/main.ts` 的退出逻辑。
+桌面与更新实现重点为 `apps/desktop/main.ts`、`apps/desktop/updates.ts`、`apps/desktop/update-menu.ts`、`apps/desktop/preload.ts`、`scripts/desktop.mjs`、`scripts/desktop-smoke.mjs`、`scripts/desktop-release.mjs`、`scripts/desktop-ci.mjs`、`scripts/desktop-changelog.mjs`、`electron-builder.yml`、`config/desktop-release.json`、`.github/workflows/ci.yml`、`.github/workflows/desktop.yml`，以及 `apps/server/src/main.ts` 的退出逻辑。
 
-复核应检查 IPC 来源、动态端口认证、安装资源只读、运行时完整性、工程服务退出、更新状态与确认流程、安装退出与服务清理、发布源固定、macOS 架构元数据合并、签名与公证要求及更新后数据保留。验收记录应区分本地模拟、原生运行和真实线上发布，不以配置存在代替通过记录。
+复核应检查 IPC 来源、动态端口认证、安装资源只读、运行时完整性、工程服务退出、更新状态与确认流程、安装退出与服务清理、发布源固定、macOS 架构元数据合并、签名与公证要求及更新后数据保留。CI/CD 另应复核版本门槛、源码 SHA 与标签不可变、草稿恢复、已公开版本保护、更新日志基线和上传资产完整性。验收记录应区分本地模拟、原生运行和真实线上发布，不以配置存在代替通过记录。

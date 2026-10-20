@@ -67,7 +67,7 @@ export async function assembleDesktopRelease({ input, output, version, config, t
     }
     // Blockmaps are update assets, never the extracted applications or test data.
     for (const name of entries.filter(name => expected.some(asset => name === `${asset}.blockmap`))) assets.set(name, join(directory, name));
-    if (target.platform === 'win' && !assets.has(`${expected[0]}.blockmap`)) throw new Error('Windows differential update blockmap is missing.');
+    for (const name of expected) if (!assets.has(`${name}.blockmap`)) throw new Error(`Differential update blockmap is missing: ${name}.blockmap`);
     const info = parse(await readFile(join(directory, target.manifest), 'utf8'));
     if (info?.version !== version || !Array.isArray(info.files) || info.files.length !== expected.length) throw new Error(`Invalid release update metadata: ${target.directory}/${target.manifest}`);
     const seen = new Set();

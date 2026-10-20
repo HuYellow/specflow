@@ -87,7 +87,9 @@ npm run desktop:package:mac:arm64
 npm run desktop:package:mac:x64
 ```
 
-构建脚本拒绝跨系统打包，避免运行时权限、符号链接和本地模块损坏。GitHub Actions 支持三个原生目标；发布仓库配置、版本标签、签名和更新元数据的维护说明见 [桌面发布流程](docs/implementation/desktop.md#发布正式版本)。
+构建脚本拒绝跨系统打包，避免运行时权限、符号链接和本地模块损坏。GitHub Actions 支持三个原生目标。
+
+CI/CD 会检查每次推送到 `main` 的提交和面向 `main` 的 PR。发布新版时，运行 `npm version patch --no-git-tag-version`（功能版本用 `minor`），将源码、`package.json` 和 `package-lock.json` 一起提交并推送到 `main`；只要版本高于所有已公开正式版，就会自动完成三平台测试、打包验收、生成中文分类更新日志、上传并校验完整资产，再公开为 Latest Release。普通同版本提交仅运行 CI；手动运行打包默认只生成 artifacts。触发方式、签名与失败重跑说明见 [桌面发布流程](docs/implementation/desktop.md#发布正式版本)。
 
 ## 验证
 

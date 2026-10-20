@@ -1,15 +1,50 @@
 name: Desktop packages
 on:
   workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish a new version after all native checks pass
+        type: boolean
+        default: false
   push:
+    branches: [main]
     tags: ['desktop-v*']
 permissions:
   contents: read
 concurrency:
-  group: desktop-${{ github.ref }}
+  group: desktop-release
   cancel-in-progress: false
 jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      build: ${{ steps.plan.outputs.build }}
+      publish: ${{ steps.plan.outputs.publish }}
+      tag: ${{ steps.plan.outputs.tag }}
+      version: ${{ steps.plan.outputs.version }}
+      sourceSha: ${{ steps.plan.outputs.sourceSha }}
+      previousTag: ${{ steps.plan.outputs.previousTag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.19.0'
+          cache: npm
+      - run: npm ci
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      - name: Plan immutable version and published changelog baseline
+        id: plan
+        run: node scripts/desktop-ci.mjs plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_PUBLISH: ${{ inputs.publish || false }}
   package:
+    needs: prepare
+    if: needs.prepare.outputs.build == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -35,6 +70,9 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.sourceSha }}
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: '24.19.0'
@@ -53,7 +91,7 @@ jobs:
         env:
           CSC_LINK: ${{ secrets[matrix.certificate] }}
           CSC_KEY_PASSWORD: ${{ secrets[matrix.certificatePassword] }}
-          CSC_IDENTITY_AUTO_DISCOVERY: ${{ github.ref_type == 'tag' && 'true' || 'false' }}
+          CSC_IDENTITY_AUTO_DISCOVERY: ${{ needs.prepare.outputs.publish == 'true' && 'true' || 'false' }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
@@ -63,6 +101,8 @@ jobs:
         run: npm run desktop:smoke:installer-directory
       - name: Smoke test packaged desktop
         run: node scripts/toolchain.mjs desktop-smoke --packaged --${{ matrix.arch }}
+      - name: Record source commit and actual package signing state
+        run: node scripts/desktop-ci.mjs record
       - uses: actions/upload-artifact@v4
         with:
           name: SpecFlow-${{ matrix.platform }}-${{ matrix.arch }}
@@ -73,16 +113,33 @@ jobs:
             release/*.blockmap
             release/latest*.yml
             release/desktop-smoke-*.json
+            release/desktop-build.json
           if-no-files-found: error
           retention-days: 14
+      - name: Preserve diagnostics when a native check fails
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: diagnostics-${{ matrix.platform }}-${{ matrix.arch }}
+          path: |
+            release/desktop-smoke-*.json
+            release/desktop-*.png
+            release/builder-debug.yml
+            .tools/installer-directory-test/summary.json
+          if-no-files-found: ignore
+          retention-days: 14
   release:
-    if: github.ref_type == 'tag'
-    needs: package
+    if: needs.prepare.outputs.publish == 'true'
+    needs: [prepare, package]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.sourceSha }}
+          fetch-depth: 0
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: '24.19.0'
@@ -97,21 +154,17 @@ jobs:
       - name: Validate installers and merge both macOS update manifests
         run: node scripts/desktop-release.mjs assemble
       - name: Publish complete GitHub Release
-        shell: bash
+        run: node scripts/desktop-ci.mjs publish
         env:
           GH_TOKEN: ${{ github.token }}
-          DESKTOP_RELEASE_TAG: ${{ github.ref_name }}
-          GH_REPO: ${{ github.repository }}
-        run: |
-          if release_state=$(gh release view "$DESKTOP_RELEASE_TAG" --json isDraft --jq .isDraft 2>/dev/null); then
-            if [ "$release_state" != "true" ]; then
-              echo "This version is already published. Increment package.json instead of replacing it."
-              exit 1
-            fi
-          else
-            gh release create "$DESKTOP_RELEASE_TAG" --draft \
-              --verify-tag --title "SpecFlow ${DESKTOP_RELEASE_TAG#desktop-v}" \
-              --generate-notes
-          fi
-          gh release upload "$DESKTOP_RELEASE_TAG" release/publish/* --clobber
-          gh release edit "$DESKTOP_RELEASE_TAG" --draft=false --latest
+          DESKTOP_RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+          DESKTOP_SOURCE_SHA: ${{ needs.prepare.outputs.sourceSha }}
+          DESKTOP_PREVIOUS_TAG: ${{ needs.prepare.outputs.previousTag }}
+      - name: Preserve release notes
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-notes
+          path: .tools/desktop-release-notes.md
+          if-no-files-found: ignore
+          retention-days: 90
