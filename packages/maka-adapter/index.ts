@@ -15,6 +15,9 @@ function assertPromptSize(prompt: string) {
 }
 type Host = { rootId: string; request(operation: string, input: unknown, timeout?: number): Promise<any>; status(): Promise<any>; openSessionSubscription(input: unknown): Promise<any>; close(): Promise<void> };
 export class MakaBackend implements ExecutionBackend {
+  toolInstructions(input: { readOnly: boolean; clarification: boolean }) {
+    return `通过 tool_search 激活 SpecFlowRead、SpecFlowList 查阅实际源码。${input.readOnly ? '本次只读，不使用写入或命令工具。' : '修改文件时使用 SpecFlowWrite；先用 SpecFlowRead 取得 contentHash，再以 expectedHash 传给 SpecFlowWrite。'}这些工具只允许当前工作空间，不要使用 Windows 上不可用的原生 Read、Write、Bash worker。${input.clarification ? '需求问题通过结构化 clarification 字段提交。' : '需要补充信息时通过 tool_search 激活 SpecFlowQuestion。'}`;
+  }
   private connection?: Host;
   private connecting?: Promise<Host>;
   constructor(readonly packageRoot: string, readonly rootPath: string, readonly workspaceRoot = join(dirname(rootPath), 'workspaces')) {}
@@ -59,7 +62,7 @@ export class MakaBackend implements ExecutionBackend {
     if (receipt.convergence !== 'converged') throw new DomainError('PLUGIN_UNAVAILABLE', '工作空间工具扩展未就绪', 503);
   }
   async inspect(): Promise<BackendCapabilities> {
-    try { const host = await this.connect(); await host.status(); return { available: true, version: MAKA_VERSION, rootId: host.rootId, canResume: true, canInteract: true, readOnlyReview: true, reason: '使用 Host plan/explore 只读策略；真实供应商验收待连接配置' }; }
+    try { const host = await this.connect(); await host.status(); return { available: true, version: MAKA_VERSION, rootId: host.rootId, canResume: true, canInteract: true, readOnlyReview: true, stepLimit: 'native', reason: '使用 Host plan/explore 只读策略；真实供应商验收待连接配置' }; }
     catch (error) { return { available: false, version: MAKA_VERSION, canResume: false, canInteract: false, readOnlyReview: false, reason: (error as Error).message }; }
   }
   async listTargets(): Promise<ModelTarget[]> {

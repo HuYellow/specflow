@@ -7,11 +7,12 @@ import { Empty, fmt, labels, short, targetLabel, useWorkspace } from './context.
 import { ClarificationHistory } from './ClarificationPanel.tsx';
 import { StepFacts } from './StepFacts.tsx';
 import { InteractionCard } from './RuntimeInteraction.tsx';
+import { backendInfo } from './backendSelection.ts';
 import './flow.css';
 
 type Detail = Attempt & { bindings: ExecutionBinding[]; interactions: Interaction[]; tasks: TaskRun[] };
 export function RunDetail({ attemptId }: { attemptId: string }) {
-  const { snapshot, perform, isPending } = useWorkspace();
+  const { snapshot, backend, perform, isPending } = useWorkspace();
   const [detail, setDetail] = useState<Detail>(), [error, setError] = useState(''), [loading, setLoading] = useState(false), [retry, setRetry] = useState(0);
   const currentId = useRef(attemptId);
   const summary = snapshot?.attempts.find(attempt => attempt.id === attemptId);
@@ -25,6 +26,7 @@ export function RunDetail({ attemptId }: { attemptId: string }) {
     return () => { active = false; };
   }, [attemptId, summary?.revision, interactionVersion, retry]);
   const attempt = detail?.id === attemptId ? detail : undefined;
+  const attemptBackend = attempt ? backendInfo(backend, attempt.target.backend) : undefined;
   const node = snapshot?.nodes.find(node => node.id === attempt?.nodeRunId);
   const definition = snapshot?.runs.find(run => run.id === node?.workflowRunId)?.definition.nodes.find(definition => definition.id === node?.nodeId);
   const scope = `attempt:${attemptId}`, pending = snapshot?.item.status === 'accepted' || isPending(scope) || !!node && isPending(`node:${node.id}`);
@@ -48,7 +50,8 @@ export function RunDetail({ attemptId }: { attemptId: string }) {
       <details className="context-details"><summary>查看固定输入与上下文 <ChevronDown size={15} /></summary><div><span>输入哈希 <code>{attempt.inputHash}</code></span>{attempt.inputs.map(input => <p key={`${input.logicalId}:${input.artifactRevisionId}`}>{input.logicalId} · {input.artifactRevisionId} · {input.contentHash}</p>)}<pre>{attempt.prompt}</pre></div></details>
       {attempt.output && <details className="context-details" open={!attempt.reviewReport}><summary>阶段输出 <ChevronDown size={15} /></summary><pre>{(() => { try { return JSON.stringify(JSON.parse(attempt.output), null, 2); } catch { return attempt.output; } })()}</pre></details>}
       {attempt.interactions.filter(interaction => (snapshot?.interactions.find(current => current.id === interaction.id) || interaction).state === 'pending').map(interaction => <InteractionCard key={interaction.id} interaction={interaction} />)}
-      <div className="run-actions"><button className="outline-button" disabled={pending || !['running', 'starting', 'waiting_interaction'].includes(attempt.execution)} onClick={() => void control('stop')}><Square size={14} />{pending ? '正在提交控制请求…' : '停止本次执行'}</button><button className="outline-button" disabled={pending || !['reconciling', 'failed', 'cancelled'].includes(attempt.execution)} onClick={() => void control('reconcile')}><RefreshCcw size={14} />核对原执行</button><button className="outline-button" disabled={pending || !['reconciling', 'failed', 'cancelled'].includes(attempt.execution)} onClick={() => void control('resume')}>恢复原执行</button></div>
+      <div className="run-actions"><button className="outline-button" disabled={pending || !['running', 'starting', 'waiting_interaction'].includes(attempt.execution)} onClick={() => void control('stop')}><Square size={14} />{pending ? '正在提交控制请求…' : '停止本次执行'}</button><button className="outline-button" disabled={pending || !['reconciling', 'failed', 'cancelled'].includes(attempt.execution)} onClick={() => void control('reconcile')}><RefreshCcw size={14} />核对原执行</button><button className="outline-button" disabled={pending || attemptBackend?.capabilities?.canResume === false || !['reconciling', 'failed', 'cancelled'].includes(attempt.execution)} onClick={() => void control('resume')}>恢复原执行</button></div>
+      {attemptBackend?.capabilities?.canResume === false && <p className="run-control-note">{attemptBackend.name} 不支持恢复原执行；可先核对结果，再创建新尝试。</p>}
       {attempt.execution === 'reconciling' && <p className="run-control-note" role="status">原执行状态尚未确认。请先核对身份，避免创建重复执行。</p>}
       {loading && <p className="run-control-note" role="status">正在更新运行详情…</p>}
     </>}

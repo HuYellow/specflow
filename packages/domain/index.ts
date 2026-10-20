@@ -9,11 +9,13 @@ export type NodeType = 'agent' | 'clarify' | 'review' | 'verify' | 'gate' | 'hum
 export type ExecutionState = 'pending' | 'starting' | 'running' | 'waiting_interaction' | 'completed' | 'failed' | 'cancelled' | 'reconciling';
 export type GateState = 'unchecked' | 'passed' | 'blocked' | 'stale';
 export type Role = 'analyst' | 'architect' | 'developer' | 'reviewer';
-export interface ModelTarget { backend: 'maka' | 'sandbox'; connectionId: string; connectionSlug: string; model: string; rootId?: string }
+export const backendIds = ['maka', 'opencode', 'sandbox'] as const;
+export type BackendId = typeof backendIds[number];
+export interface ModelTarget { backend: BackendId; connectionId: string; connectionSlug: string; model: string; rootId?: string }
 export interface VerificationCommand { id: string; executable: string; args: string[]; timeoutMs: number }
 export interface GuidanceFile { name: 'AGENT.md' | 'AGENTS.md'; content: string; contentHash: string }
 export interface ProjectGuidance { files: GuidanceFile[]; rules: string; contentHash: string }
-export interface Project extends Entity { name: string; rootPath: string; baseCommit: string; rules: string; guidance?: ProjectGuidance; guidanceError?: string; defaults: Partial<Record<Role, ModelTarget>>; commands: VerificationCommand[]; demo: boolean }
+export interface Project extends Entity { name: string; rootPath: string; baseCommit: string; rules: string; guidance?: ProjectGuidance; guidanceError?: string; defaults: Partial<Record<Role, ModelTarget>>; commands: VerificationCommand[]; demo: boolean; executionBackend?: BackendId }
 export interface WorkItem extends Entity { projectId: string; name: string; request: string; requirementRevisionId?: string; kind: 'feature' | 'bug' | 'refactor'; baseCommit: string; acceptedCommit: string; workspace: string; branch: string; status: 'active' | 'accepted' }
 export interface RequirementDocument { id: string; name: string; content: string; source: 'upload' | 'repository' | 'pasted'; repositoryPath?: string }
 export interface RequirementRevision extends Entity { workItemId: string; number: number; request: string; documents: RequirementDocument[]; contentHash: string }
@@ -23,9 +25,9 @@ export interface Workflow extends Entity { workItemId: string; definition: Workf
 export interface WorkflowRun extends Entity { workItemId: string; workflowId: string; definition: WorkflowDefinition; rules: string; rulesHash: string; state: 'active' | 'paused' | 'completed' | 'cancelled' }
 export interface InputBinding { logicalId: string; artifactRevisionId: string; contentHash: string }
 export interface NodeRun extends Entity { workflowRunId: string; nodeId: string; name: string; type: NodeType; execution: ExecutionState; gate: GateState; freshness: 'fresh' | 'stale'; acceptance: 'pending' | 'accepted'; currentAttemptId?: string; blockers: string[]; error?: string }
-export interface ExecutionRef { backend: 'maka' | 'sandbox'; rootId: string; sessionId: string; turnId: string; runId?: string }
+export interface ExecutionRef { backend: BackendId; rootId: string; sessionId: string; turnId: string; runId?: string }
 export interface Attempt extends Entity { nodeRunId: string; number: number; inputHash: string; inputs: InputBinding[]; requirementRevisionId?: string; guidance?: ProjectGuidance; clarificationSessionId?: string; clarificationQuestions?: ClarificationQuestion[]; review?: ReviewContext; reviewReport?: ReviewReport; target: ModelTarget; prompt: string; codeBaseline: string; candidateId?: string; execution: ExecutionState; bindingId?: string; error?: string; output?: string; startedAt?: string; finishedAt?: string; usage?: { inputTokens: number; outputTokens: number; costUsd: number | null } }
-export interface ExecutionBinding extends Entity { attemptId: string; ref: ExecutionRef; parentBindingId?: string; kind: 'initial' | 'resume'; cursor?: string }
+export interface ExecutionBinding extends Entity { attemptId: string; ref: ExecutionRef; parentBindingId?: string; kind: 'initial' | 'resume'; cursor?: string; taskId?: string }
 export interface Artifact extends Entity { workItemId: string; logicalId: string; type: string; revisionIds: string[]; currentRevisionId: string; acceptedRevisionId?: string; owner: string }
 export interface HumanBrief { title: string; summary: string; sections: { title: string; items: string[] }[] }
 export interface HumanReading { schemaVersion: 1; sourceRevisionId: string; sourceContentHash: string; brief: HumanBrief; mode: 'authored' | 'extractive' }

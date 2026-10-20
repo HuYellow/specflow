@@ -5,10 +5,15 @@ import { SandboxBackend } from './sandbox-backend.ts';
 import { MakaBackend } from '../../../packages/maka-adapter/index.ts';
 import { createApp } from './app.ts';
 import { MAKA_VERSION } from '../../../packages/maka-adapter/release-policy.ts';
+import { BackendRegistry } from '../../../packages/execution-contract/registry.ts';
+import { RuntimeConfiguration } from './runtime-configuration.ts';
 const dataDir = resolve(process.env.SPECFLOW_DATA_DIR || '.specflow-data/local');
 const maka = new MakaBackend(resolve(process.env.SPECFLOW_MAKA_PACKAGE || '.tools/maka/node_modules/maka-agent'), resolve(process.env.SPECFLOW_MAKA_ROOT || join(dataDir, 'maka', MAKA_VERSION)), join(dataDir, 'workspaces'));
 const store = new Store(`${dataDir}/engineering.sqlite`);
-const service = new EngineeringService(store, dataDir, { maka, sandbox: new SandboxBackend() });
+const registry = new BackendRegistry({ maka, sandbox: new SandboxBackend() });
+const runtimeConfiguration = new RuntimeConfiguration(dataDir, registry);
+await runtimeConfiguration.initialize();
+const service = new EngineeringService(store, dataDir, registry, runtimeConfiguration);
 await service.initialize();
 if (process.env.SPECFLOW_NO_DEMO !== '1') await service.seedDemo();
 const app = await createApp(service, { staticRoot: resolve(process.env.SPECFLOW_STATIC_ROOT || 'dist/web'), desktopSecret: process.env.SPECFLOW_DESKTOP_SECRET });
@@ -23,7 +28,7 @@ const close = async () => {
   for (const controller of service.verificationControllers.values()) controller.abort();
   // SSE connections otherwise keep Fastify.close pending indefinitely.
   const closingApp = app.close(); app.server.closeAllConnections();
-  await closingApp; await maka.close(); store.close(); process.exit(0);
+  await closingApp; await registry.close(); store.close(); process.exit(0);
 };
 process.on('SIGINT', close); process.on('SIGTERM', close);
 if (process.send) {

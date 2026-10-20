@@ -1,6 +1,6 @@
 ---
 title: SpecFlow 内置 Maka 的当前方案
-subtitle: 暂时从正式源码构建 · 后续转 npm · 底座选择暂缓
+subtitle: 暂时从正式源码构建 · 后续转 npm · 默认内置底座
 template: doc
 theme: shadcn
 lang: zh
@@ -10,7 +10,9 @@ status: 源码运行包和 Host 验证通过
 
 当前内置 Maka 0.2.0，来源为 Apache 的签名正式源码发布包。
 只打包 Runtime Host 和生产依赖，继续禁止使用 dev。
-底座独立选择、切换和新增适配器暂缓。
+Maka 保持默认内置底座。
+现已支持工程选择 Maka 或本机 OpenCode 服务。
+切换机制见 [底座接入与切换](execution-backends.md)。
 
 ## A 正式源码如何进入应用
 
@@ -59,8 +61,8 @@ Maka 正式 npm 包发布后，改为 `distribution: npm`。
 
 适配器、模型设置和工程流程沿用现有结构。
 版本相同时沿用正式版状态根，切换前重新验证 Host 与工程链。
-当前只使用 Maka，保留已有执行契约。
-不新增底座选择、切换界面或额外适配器。
+Maka 的 npm 迁移继续复用现有执行契约。
+工程可以另选 OpenCode，不影响 Maka 的发布来源要求。
 
 ## D 当前验证与限制
 

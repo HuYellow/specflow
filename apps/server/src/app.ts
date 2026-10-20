@@ -5,12 +5,12 @@ import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { z } from 'zod';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
-import { DomainError, compileWorkflow, hash, type WorkflowDefinition } from '../../../packages/domain/index.ts';
+import { backendIds, DomainError, compileWorkflow, hash, type WorkflowDefinition } from '../../../packages/domain/index.ts';
 import { EngineeringService } from './service.ts';
 import { MakaBackend } from '../../../packages/maka-adapter/index.ts';
 import { UserCodeReview } from './user-review.ts';
 
-const target = z.object({ backend: z.enum(['maka', 'sandbox']), connectionId: z.string().min(1), connectionSlug: z.string().min(1), model: z.string().min(1), rootId: z.string().optional() });
+const target = z.object({ backend: z.enum(backendIds), connectionId: z.string().min(1), connectionSlug: z.string().min(1), model: z.string().min(1), rootId: z.string().optional() });
 const command = z.object({ id: z.string().regex(/^[a-z][a-z0-9_-]*$/), executable: z.string().min(1), args: z.array(z.string()), timeoutMs: z.number().int().min(100).max(600000) });
 const workflowSchema = z.object({ schemaVersion: z.literal(1), id: z.string().min(1), name: z.string().min(1),
   nodes: z.array(z.object({ id: z.string().regex(/^[a-z][a-z0-9_-]*$/), name: z.string().min(1), type: z.enum(['agent', 'clarify', 'review', 'verify', 'gate', 'human']), role: z.enum(['analyst', 'architect', 'developer', 'reviewer']).optional(), prompt: z.string(), inputs: z.array(z.string()), outputs: z.array(z.string().regex(/^[a-z][a-z0-9_-]*$/)), target: target.optional(), requireAcceptance: z.boolean().optional(), taskMode: z.boolean().optional(), maxSteps: z.number().int().min(1).max(100).optional(), timeoutMs: z.number().int().min(1000).max(900000).optional() })).min(1),
@@ -57,13 +57,14 @@ export async function createApp(service: EngineeringService, options: { staticRo
   };
   const inFlight = new Set<string>();
   app.get('/api/bootstrap', async () => ({ token, projects: service.store.list('projects'), workItems: service.store.list('workItems'), version: '0.1.0' }));
-  app.get('/api/backend/targets', async () => {
-    const capability = await service.backends.maka.inspect(); const makaTargets = capability.available ? await service.backends.maka.listTargets().catch(() => []) : [];
-    return { maka: capability, sandbox: await service.backends.sandbox.inspect(), targets: [...makaTargets, ...await service.backends.sandbox.listTargets()] };
+  app.get('/api/backend/targets', () => service.backendCatalog());
+  commandRoute('/api/backend/opencode/configure', request => {
+    const body = z.object({ baseUrl: z.string().min(1).max(2048), username: z.string().max(256).optional(), password: z.string().max(4096).optional() }).strict().parse(request.body);
+    return service.configureOpenCode(body);
   });
   commandRoute('/api/backend/connections', async request => {
     const body = z.object({ slug: z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/), name: z.string().min(1), providerType: z.enum(['custom', 'anthropic', 'google', 'openai', 'deepseek']), baseUrl: z.string().url().optional(), protocol: z.enum(['openai-chat', 'openai-responses', 'anthropic-messages']).optional(), models: z.array(z.string().min(1)).min(1), apiKey: z.string().optional() }).parse(request.body);
-    const backend = service.backends.maka;
+    const backend = service.registry.require('maka');
     if (!(backend instanceof MakaBackend)) throw new DomainError('BACKEND_UNAVAILABLE', '当前后端不支持连接管理', 503);
     return backend.configureConnection(body);
   });
@@ -75,11 +76,9 @@ export async function createApp(service: EngineeringService, options: { staticRo
   });
   commandRoute('/api/projects', async request => { const body = z.object({ rootPath: z.string().min(1), name: z.string().optional() }).parse(request.body); return service.registerProject(body.rootPath, body.name); });
   commandRoute('/api/projects/:id/configure', async request => {
-    const body = z.object({ expectedRevision: z.number().int().positive(), rules: z.string(), commands: z.array(command).min(1), defaults: z.object({ analyst: target.optional(), architect: target.optional(), developer: target.optional(), reviewer: target.optional() }) }).parse(request.body);
+    const body = z.object({ expectedRevision: z.number().int().positive(), executionBackend: z.enum(backendIds).optional(), rules: z.string(), commands: z.array(command).min(1), defaults: z.object({ analyst: target.optional(), architect: target.optional(), developer: target.optional(), reviewer: target.optional() }) }).parse(request.body);
     const { expectedRevision, ...patch } = body;
-    service.assertProjectWritable(param(request));
-    service.store.update('projects', param(request), patch, expectedRevision);
-    await service.guidance.refresh(param(request)); return service.store.get('projects', param(request));
+    return service.configureProject(param(request), expectedRevision, patch);
   });
   commandRoute('/api/work-items', async request => { const body = z.object({ projectId: z.string(), name: z.string().min(1), request: z.string().default(''), documents: z.array(requirementDocument).max(20).default([]), kind: z.enum(['feature', 'bug', 'refactor']).default('feature') }).parse(request.body); return service.createWorkItem(body.projectId, body.name, body.request, body.kind, body.documents); });
   app.get('/api/work-items/:id', request => {

@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
 import { Activity, ArrowRight, Check, ChevronDown, ChevronRight, Circle, FileCheck2, FileText, Loader2, Pin, Play, RefreshCcw, Settings2, ShieldCheck } from 'lucide-react';
-import type { ModelTarget } from '../../../packages/domain/index.ts';
 import { api } from './api.ts';
 import { useWorkspace, logicalLabels, NodeIcon, short, targetLabel, serializeTarget } from './context.tsx';
 import { hasRequirementDraft } from './Requirements.tsx';
@@ -8,6 +7,7 @@ import { ClarificationPanel } from './ClarificationPanel.tsx';
 import { StepFacts } from './StepFacts.tsx';
 import { ResizablePane } from './ResizablePane.tsx';
 import { getConditionReasons, getFlowReadinessKey, getNextAction, getNodeDispatchScopes, getStepStatus, getWorkflowProgress, groupWorkflowNodes, selectCurrentNode, type ReadinessState } from './flowSelectors.ts';
+import { backendInfo, currentTargetOverride, projectBackend, selectBackendTarget, targetsForBackend } from './backendSelection.ts';
 import './flow.css';
 
 export function Flow() {
@@ -26,17 +26,21 @@ export function Flow() {
   const attempt = snapshot?.attempts.find(a => a.id === node?.currentAttemptId);
   const session = snapshot?.clarifications.filter(s => s.nodeRunId === node?.id).at(-1);
   const modelStage = ['agent', 'clarify', 'review'].includes(node?.type || '');
-  const target = (node?.type === 'clarify' && session && ['analyzing', 'waiting_answers'].includes(session.state) ? attempt?.target : undefined) || def?.target || (def?.role && viewedRun?.definition.roles[def.role]) || (def?.role && snapshot?.project.defaults[def.role]);
+  const executionBackend = projectBackend(snapshot?.project);
+  const target = selectBackendTarget(executionBackend, def?.target, def?.role ? viewedRun?.definition.roles[def.role] : undefined, def?.role ? snapshot?.project.defaults[def.role] : undefined);
+  const overrideTarget = currentTargetOverride(override, executionBackend);
+  const selectedTarget = overrideTarget || target;
+  const selectedBackend = backendInfo(backend, executionBackend);
   const requirements = snapshot?.requirements.current;
   const accepted = snapshot?.item.status === 'accepted';
   const unsavedRequirements = !!snapshot && !!requirements && hasRequirementDraft(snapshot.item.id, requirements);
-  const targets: ModelTarget[] = (backend?.targets || []).filter((t: ModelTarget) => t.backend !== 'sandbox' || snapshot?.project.demo);
+  const targets = targetsForBackend(backend?.targets || [], executionBackend);
   const progress = getWorkflowProgress(run, nodes), groups = groupWorkflowNodes(run, nodes);
   const { scope: pendingScope, locks: dispatchScopes } = getNodeDispatchScopes(node, snapshot?.candidates.at(-1)?.id);
   const dispatching = dispatchScopes.some(scope => isPending(scope));
   const readinessKey = getFlowReadinessKey(node, viewedRun, snapshot);
   const readiness: ReadinessState = checked?.key === readinessKey ? checked.result : { state: 'loading' };
-  useEffect(() => { setOverride(''); }, [node?.id]);
+  useEffect(() => { setOverride(''); }, [node?.id, executionBackend]);
   useEffect(() => {
     let current = true; const controller = new AbortController();
     if (!node || accepted) return;
@@ -50,7 +54,7 @@ export function Flow() {
   const clientBlockers = [
     ...(unsavedRequirements ? ['需求有未保存草稿或版本冲突，请先保存或处理冲突'] : []),
     ...(snapshot?.project.guidanceError ? [snapshot.project.guidanceError] : []),
-    ...(modelStage && !override && !target ? ['尚未选择连接与模型，请在步骤上下文中配置'] : []),
+    ...(modelStage && !selectedTarget ? ['尚未选择当前底座的连接与模型，请在步骤上下文中配置'] : []),
   ];
   const reasons = getConditionReasons(readiness, clientBlockers, node?.blockers || []);
   const active = !!node && ['starting', 'running', 'waiting_interaction', 'reconciling'].includes(node.execution);
@@ -67,7 +71,7 @@ export function Flow() {
   const openOutput = () => { if (outputArtifact) setSelectedArtifact(outputArtifact.id); setTab('artifacts'); };
   const start = () => {
     if (!canDispatch || !node) return;
-    return perform(() => api(`/node-runs/${node.id}/attempts`, { expectedRevision: node.revision, ...(override ? { target: JSON.parse(override) } : {}) }), node.type === 'human' ? '候选代码已接纳' : '阶段已派发，运行结果会自动更新', pendingScope);
+    return perform(() => api(`/node-runs/${node.id}/attempts`, { expectedRevision: node.revision, ...(overrideTarget ? { target: overrideTarget } : {}) }), node.type === 'human' ? '候选代码已接纳' : '阶段已派发，运行结果会自动更新', pendingScope);
   };
   const openPendingItem = (item: typeof pendingItems[number]) => {
     openAttention(item);
@@ -92,7 +96,7 @@ export function Flow() {
 
   const context = <><div className="inspector-body"><div className="inspector-label"><span>{selectedIsHistory ? '历史运行的步骤' : '步骤上下文'}</span><span>{node ? String((viewedRun?.definition.nodes.findIndex(n => n.id === node.nodeId) ?? -1) + 1).padStart(2, '0') : '—'}</span></div><div className="inspector-title"><div><NodeIcon type={node?.type || 'agent'} size={22} /></div><h2>{node?.name || '选择步骤'}</h2></div>
     {node && <StepFacts node={node} definition={def} />}
-    {modelStage && <div className="inspector-section"><label htmlFor="flow-model-target">执行配置 <Settings2 size={13} /></label><select id="flow-model-target" value={override || (target ? serializeTarget(target) : '')} onChange={e => setOverride(e.target.value)}><option value="">选择连接与模型</option>{target && !targets.some(t => serializeTarget(t) === serializeTarget(target)) && <option value={serializeTarget(target)}>{targetLabel(target)} · 当前配置</option>}{targets.map(t => <option key={serializeTarget(t)} value={serializeTarget(t)}>{targetLabel(t)}</option>)}</select><small>节点覆盖优先于流程角色和项目默认。更换配置仅用于新尝试。</small></div>}
+    {modelStage && <div className="inspector-section"><label htmlFor="flow-model-target">执行配置 <Settings2 size={13} /></label><select id="flow-model-target" value={selectedTarget ? serializeTarget(selectedTarget) : ''} onChange={e => setOverride(e.target.value)}><option value="">选择连接与模型</option>{target && !targets.some(t => serializeTarget(t) === serializeTarget(target)) && <option value={serializeTarget(target)}>{targetLabel(target)} · 当前配置</option>}{targets.map(t => <option key={serializeTarget(t)} value={serializeTarget(t)}>{targetLabel(t)}</option>)}</select><small>当前底座：{selectedBackend.name}。节点覆盖优先于流程角色和项目默认，更换配置用于新尝试。</small>{node?.type === 'clarify' && session && ['analyzing', 'waiting_answers'].includes(session.state) && attempt && <small>当前澄清使用 {targetLabel(attempt.target)}；未重新选择时沿用原执行配置。</small>}</div>}
     {modelStage && <div className="inspector-section"><label>项目章程</label><button className="input-card" onClick={openSettings}><ShieldCheck size={16} /><span>{snapshot?.project.guidance?.files.map(f => f.name).join(' + ') || '补充工程规则'}<small>当前内容 {short(snapshot?.project.guidance?.contentHash)} · 查看 / 编辑</small></span><ChevronRight size={14} /></button></div>}
     <div className="inspector-section"><label>输入依据 <span>{(def?.inputs.length || 0) + (modelStage ? 1 : 0)}</span></label>{modelStage && <button className="input-card requirement-input-card" onClick={() => setTab('requirements')}><FileText size={16} /><span>已保存需求与文档<small>版本 {requirements?.number} · {requirements?.documents.length || 0} 份文档{unsavedRequirements ? ' · 本地另有草稿' : ''}</small></span><ChevronRight size={14} /></button>}{def?.inputs.map(input => { const artifact = snapshot?.artifacts.find(a => a.logicalId === input.split('@')[0]); const revisionId = input.includes('@accepted') ? artifact?.acceptedRevisionId : artifact?.currentRevisionId; const revision = snapshot?.revisions.find(value => value.id === revisionId); return <button className="input-card" key={input} disabled={!artifact} onClick={() => { if (artifact) { setSelectedArtifact(artifact.id); if (revisionId) setSelectedRevision(revisionId); setTab('artifacts'); } }}><FileText size={16} /><span>{logicalLabels[input.split('@')[0]] || input}<small>{revision ? `${input.includes('@accepted') ? '已接纳依据' : '当前候选'} · ${short(revision.id)} · ${short(revision.contentHash)}` : '等待符合条件的上游产物'}</small></span><span className={revision ? 'input-ok' : 'input-missing'}>{revision ? <Check size={14} /> : <Circle size={12} />}</span></button>; })}<small>{selectedIsHistory ? '上方为当前材料；本次历史执行实际使用的版本见运行详情。' : '新尝试固定当前章程与已保存需求；原执行的冻结依据见运行详情。'}</small></div>
     <div className="inspector-section"><label>执行目标</label><p className="prompt-preview">{def?.prompt || (node?.type === 'verify' ? '执行项目验证命令，核对退出码与候选代码哈希。' : '检查工程条件并保存接纳决策。')}</p></div>
@@ -108,7 +112,7 @@ export function Flow() {
     <div className="flow-progress-section"><div><span>{progress.total ? `当前有效通过 ${progress.completed} / ${progress.total} 步` : '尚无步骤'}</span>{progress.percent !== undefined && <strong>{progress.percent}%</strong>}<span className="flow-delivery-state">{accepted ? '工作项已交付' : '工作项尚未交付'}</span></div>{progress.percent !== undefined && <div className="progress-track" role="progressbar" aria-label="当前有效通过步骤" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress.percent} aria-valuetext={`当前有效通过 ${progress.completed} / ${progress.total} 步：执行已结束、门禁通过且版本有效，需人工接纳的步骤已接纳；${progress.awaitingAcceptance} 步待人工接纳，${progress.stale} 步上游已变更。百分比不代表交付。`}><span style={{ width: `${progress.percent}%` }} /></div>}{!!progress.stale && <p>{progress.stale} 步的上游依据已变更，有效通过计数随之回退。</p>}</div>
     {node && <section className="flow-current-body" aria-label="当前步骤的工作内容">
       {!accepted && !!reasons.length && <details className={`flow-conditions ${readiness.state === 'error' ? 'has-error' : ''}`} open={clientBlockers.length > 0 || readiness.state === 'error' || readiness.state === 'blocked'}><summary>运行条件 <span>{readiness.state === 'loading' ? '检查中' : readiness.state === 'error' ? '读取失败' : readiness.state === 'ready' ? clientBlockers.length ? '服务端满足 · 本地待处理' : '服务端满足' : '服务端条件不足'}</span></summary><ul>{reasons.map(reason => <li key={reason.reason}><span>{reason.reason}</span><small>{reason.sources.join(' · ')}</small></li>)}</ul><div className="flow-condition-actions">{(readiness.state === 'error' || readiness.state === 'blocked') && <button className="outline-button" onClick={() => setRetry(value => value + 1)}><RefreshCcw size={14} /> 重试检查</button>}{unsavedRequirements && <button className="outline-button" onClick={() => setTab('requirements')}>保存需求 / 处理冲突</button>}{snapshot?.project.guidanceError && <button className="outline-button" onClick={openSettings}>修复项目章程</button>}</div></details>}
-      {node.type === 'clarify' && <div ref={clarification} className="flow-clarification"><ClarificationPanel session={session} target={override ? JSON.parse(override) : undefined} disabled={unsavedRequirements || !!snapshot?.project.guidanceError} /></div>}
+      {node.type === 'clarify' && <div ref={clarification} className="flow-clarification"><ClarificationPanel session={session} target={overrideTarget} disabled={unsavedRequirements || !!snapshot?.project.guidanceError} /></div>}
       {action.kind !== 'dispatch' && !accepted && !active && !waiting && viewedRun?.state === 'active' && <div className="flow-secondary-dispatch"><span>{node.freshness === 'stale' ? '当前结果已过期，使用最新已保存依据创建新尝试。' : '需要继续此步骤时，运行条件仍须全部满足。'}</span><button className="outline-button" disabled={!canDispatch} onClick={() => void start()}>{dispatching ? <Loader2 size={14} className="spin" /> : <Play size={14} />}{node.type === 'human' ? '接纳候选代码' : node.execution === 'pending' ? '运行所选步骤' : '创建新尝试'}</button></div>}
       {outputArtifact && node.execution === 'completed' && action.kind !== 'artifact' && <button className="flow-result-link" onClick={openOutput}><FileCheck2 size={17} /><span>查看{logicalLabels[outputArtifact.logicalId] || outputArtifact.logicalId}<small>修订 {short(outputArtifact.currentRevisionId)} · 以选定修订的接纳状态为准</small></span><ArrowRight size={15} /></button>}
     </section>}

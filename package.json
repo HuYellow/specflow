@@ -17,6 +17,7 @@
     "typecheck": "node scripts/toolchain.mjs typecheck",
     "maka:setup": "node scripts/toolchain.mjs maka-setup",
     "maka:probe": "node scripts/toolchain.mjs maka-probe",
+    "opencode:smoke": "node scripts/toolchain.mjs opencode-smoke",
     "desktop:dev": "node scripts/toolchain.mjs desktop start",
     "desktop:prepare": "node scripts/toolchain.mjs desktop prepare",
     "desktop:package": "node scripts/toolchain.mjs desktop package",
