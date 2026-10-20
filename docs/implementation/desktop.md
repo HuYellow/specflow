@@ -22,6 +22,10 @@ Windows 选择磁盘根目录时，安装器会立即在目录输入框显示完
 
 Windows 已有打包程序本机验收记录。macOS 需要原生构建与运行验收。当前尚未配置 Windows Authenticode 签名、macOS Developer ID 签名及 Apple 公证，尚无对应通过记录；操作系统可能对未签名应用显示安全提示。
 
+2026-10-20 已正式发布 [SpecFlow 0.1.3](https://github.com/HuYellow/specflow/releases/tag/desktop-v0.1.3)，并设为 Latest。[原生 CI](https://github.com/HuYellow/specflow/actions/runs/39369191126) 的 Windows x64、macOS arm64、macOS x64 及发布任务全部通过：各平台 151 项测试、原生安装包构建、源码目录外启动及完整打包验收成功；Windows 另通过 17 个安装目录路径案例和 5 次静默目录检查。三个目标来自标签提交 `9d1d2195cf7212092d3abe0afdf5e25ad457a39c`。首次发布修复了 macOS 源码真实路径比较、空证书链接、随包 npm 链接，以及 901–1119px 紧凑桌面导航入口。
+
+发行页包含五个安装文件（Windows EXE、两个 macOS 架构的 DMG/ZIP）、五个 blockmap、Windows/macOS 更新清单与 SHA-256 校验文件，共 13 项。发布后已确认正式非预发布状态、Latest 指向、标签提交、资产完整性、GitHub 上传 SHA-256 与 `SHA256SUMS.txt` 一致，以及更新清单的版本和安装包大小。以上验收不代表安装包已签名、公证，也不代表跨版本升级已实际完成。
+
 ## 检查与安装更新
 
 安装版使用 `electron-updater`，从 `config/desktop-release.json` 指定的 GitHub 仓库读取正式发行版本，当前发布源为 `HuYellow/specflow`，通道为 `latest`。发布源在构建时固定，界面不接受任意更新服务器地址。开发模式不执行真实安装更新。
@@ -162,7 +166,7 @@ Windows 桌面验收使用隔离临时用户目录；打包验收先把完整应
 
 安装目录回归通过 `npm run desktop:smoke:installer-directory` 执行，真实 NSIS 编译运行覆盖 17 种路径与 5 种静默 `/D=` 入口。原生测试向导还验证了根目录即时回显、继续输入自定义目录、浏览取消保留原路径及中文文件夹；测试向导仅写隔离报告，不安装应用。目录规则也在 Windows CI 中检查。
 
-更新状态测试使用模拟更新器验证显式下载与安装门槛、并发去重、失败重试、关闭后台的顺序和发布元数据处理；**首次真实 Release 发布、跨版本下载安装、Windows 正式签名、macOS 签名与公证及原生升级仍需在发布环境验收**。未发布 Release 时，更新检查不能用于证明升级链已经在线可用。
+更新状态测试使用模拟更新器验证显式下载与安装门槛、并发去重、失败重试、关闭后台的顺序和发布元数据处理；首次真实 Release 已于 2026-10-20 发布并核对线上资产。**跨版本下载安装、Windows 正式签名、macOS 签名与公证及原生升级仍需在发布环境验收**，发行资产在线可用不等于升级链已完整验证。
 
 真实云端供应商的质量、费用元数据和长任务恢复仍按约定后补。Maka 官方源码锁定的生产依赖审计记录见 [依赖审计](maka-dependency-audit.json)，不会为消除告警自动改写官方锁文件。
 
