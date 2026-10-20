@@ -1,7 +1,7 @@
 import { _electron as electron } from '@playwright/test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
-import { cp, mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { cp, mkdtemp, mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { execFile, spawn } from 'node:child_process';
@@ -48,6 +48,12 @@ try {
   const runtimeDirectory = join(resourceDirectory, 'runtime');
   const nodeBinary = join(runtimeDirectory, process.platform === 'win32' ? 'node.exe' : 'bin/node');
   const npmCli = join(runtimeDirectory, process.platform === 'win32' ? 'node_modules/npm/bin/npm-cli.js' : 'lib/node_modules/npm/bin/npm-cli.js');
+  if (process.platform === 'darwin') {
+    for (const command of ['npm', 'npx']) {
+      assert.equal(await realpath(join(runtimeDirectory, 'bin', command)), await realpath(join(runtimeDirectory, 'lib/node_modules/npm/bin', `${command}-cli.js`)), `${command} must resolve to its bundled CLI`);
+    }
+    record.checks.push('bundled npm and npx links resolve inside the copied macOS runtime');
+  }
   // Resolve and load with the shipped Node, from the same directory as server.mjs.
   // Check ownership as well as loading, even when testing a development package.
   const dependencyProbe = await execFileAsync(nodeBinary, ['--input-type=module', '-e', `

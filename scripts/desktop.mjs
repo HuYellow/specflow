@@ -55,7 +55,7 @@ async function prepareRuntime() {
   }
   // Only delete fixed staging paths under this project, never a user data directory.
   await rm(runtime, { recursive: true, force: true });
-  await cp(extraction, runtime, { recursive: true });
+  await cp(extraction, runtime, { recursive: true, verbatimSymlinks: true });
   await writeFile(join(staging, 'runtime-integrity.json'), JSON.stringify({ node: runtimeVersion, platform, arch, archiveName, sha256: expected }, null, 2));
 }
 async function prepare() {
