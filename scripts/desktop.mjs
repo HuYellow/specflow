@@ -21,7 +21,13 @@ if (packageArgs.some(argument => !['--win', '--mac', '--x64', '--arm64', '--dir'
 if ((packageArgs.includes('--win') && packageArgs.includes('--mac')) || (packageArgs.includes('--x64') && packageArgs.includes('--arm64'))) throw new Error('Build one desktop platform and architecture per invocation.');
 function run(binary, args, cwd = root, extraEnv = {}) {
   return new Promise((done, reject) => {
-    const child = spawn(binary, args, { cwd, env: { ...process.env, ...extraEnv }, stdio: 'inherit', windowsHide: true });
+    const env = { ...process.env, ...extraEnv };
+    // Actions supplies empty strings for missing secrets. electron-builder treats
+    // an empty certificate link as the project directory instead of no certificate.
+    for (const name of ['CSC_LINK', 'WIN_CSC_LINK', 'CSC_INSTALLER_LINK']) {
+      if (env[name]?.trim() === '') delete env[name];
+    }
+    const child = spawn(binary, args, { cwd, env, stdio: 'inherit', windowsHide: true });
     child.on('error', reject); child.on('exit', code => code === 0 ? done() : reject(new Error(`${binary} exited ${code}`)));
   });
 }
