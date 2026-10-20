@@ -28,7 +28,7 @@ SpecFlow 是面向本地 Git 仓库的软件工程工作台。你可以在独立
 
 安装包包含 Electron、Node.js 24、npm、Maka 0.2.0 Runtime Host 和工作区扩展，使用时无需手动启动 Web 服务或安装 Node.js、GPG。**本机仍需安装 Git**；运行项目验证命令还需要该项目自己的工具链。
 
-Windows 安装包与打包应用已有本机验收记录；macOS 需要在对应架构的 Mac 或 CI 中构建并验收。当前尚未配置安装包发布签名和 Apple 公证。构建、数据位置与安装问题见 [桌面安装、更新与发布说明](docs/implementation/desktop.md)。
+macOS 当前尚未配置安装包发布签名和 Apple 公证。构建、数据位置与安装问题见 [桌面安装、更新与发布说明](docs/implementation/desktop.md)。
 
 ## 检查与安装更新
 
