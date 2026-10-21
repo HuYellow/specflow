@@ -7,6 +7,7 @@ import { requirementFresh } from './requirements.ts';
 import { guidanceFresh } from './guidance.ts';
 import { openReviewFindings } from './reviews.ts';
 import { createReading, humanBriefSchema, renderReadingHtml } from '../document-presentation/index.ts';
+import type { Locale } from '../i18n/index.ts';
 
 export class Artifacts {
   private locks = new Set<string>();
@@ -46,22 +47,30 @@ export class Artifacts {
       return revision;
     });
   }
-  reading(revisionId: string) {
-    const revision = this.store.get('artifactRevisions', revisionId);
-    return createReading(revision, this.store.get('artifacts', revision.artifactId).logicalId);
+  private readingLocale(revisionId: string): Locale {
+    const revision = this.store.get('artifactRevisions', revisionId), artifact = this.store.get('artifacts', revision.artifactId);
+    // An exported copy follows its source attempt, even after the interface language changes.
+    const attempt = revision.originAttemptId ? this.store.get('attempts', revision.originAttemptId) : undefined;
+    if (attempt) return this.store.get('runs', this.store.get('nodes', attempt.nodeRunId).workflowRunId).definition.locale || 'zh-CN';
+    return this.store.list('workflows', workflow => workflow.workItemId === artifact.workItemId).at(-1)?.definition.locale || 'zh-CN';
   }
-  readingHtml(revisionId: string) {
+  reading(revisionId: string, locale: Locale = this.readingLocale(revisionId)) {
     const revision = this.store.get('artifactRevisions', revisionId);
-    return renderReadingHtml(this.reading(revisionId), this.store.get('artifacts', revision.artifactId).logicalId);
+    return createReading(revision, this.store.get('artifacts', revision.artifactId).logicalId, locale);
+  }
+  readingHtml(revisionId: string, locale: Locale = this.readingLocale(revisionId)) {
+    const revision = this.store.get('artifactRevisions', revisionId);
+    return renderReadingHtml(this.reading(revisionId, locale), this.store.get('artifacts', revision.artifactId).logicalId, locale);
   }
   /** Derived files are rebuildable; the canonical write journal owns acceptance. */
   async exportReading(revisionId: string) {
     const revision = this.store.get('artifactRevisions', revisionId), artifact = this.store.get('artifacts', revision.artifactId);
-    const item = this.store.get('workItems', artifact.workItemId), reading = this.reading(revisionId);
+    const locale = this.readingLocale(revisionId);
+    const item = this.store.get('workItems', artifact.workItemId), reading = this.reading(revisionId, locale);
     const path = await safePath(item.workspace, `.specflow/work-items/${item.id}/${artifact.logicalId}.human.html`);
     await mkdir(dirname(path), { recursive: true });
     const temporary = `${path}.${id()}.tmp`;
-    await writeFile(temporary, renderReadingHtml(reading, artifact.logicalId), 'utf8'); await rename(temporary, path);
+    await writeFile(temporary, renderReadingHtml(reading, artifact.logicalId, locale), 'utf8'); await rename(temporary, path);
   }
   private async exportForAcceptance(revisionId: string) {
     try { await this.exportReading(revisionId); }

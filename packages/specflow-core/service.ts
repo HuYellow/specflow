@@ -1,3 +1,4 @@
+import { translate, type Locale } from '../i18n/index.ts';
 import { mkdir, readFile, writeFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { z } from 'zod';
@@ -20,6 +21,7 @@ import { createReviewCriteria, reviewInstructions, reviewPassed, reviewReportSch
 import { findingLogicalId, openReviewFindings, reviewArtifactSources, reviewBindings, reviewEvidence, reviewPrompt, reviewSubjectBindings } from './reviews.ts';
 import { humanBriefSchema } from '../document-presentation/index.ts';
 import type { AcceptancePrecheck, AttemptSummary, AttemptPage } from '../ui-contracts/index.ts';
+import { englishGuidanceText, englishReviewCriteria, englishReviewPrompt, englishStagePrompt } from './english-prompts.ts';
 
 const resultSchema = z.object({ summary: z.string(), artifacts: z.array(z.object({ logicalId: z.string(), type: z.string(), content: z.string().min(1), humanBrief: humanBriefSchema.optional() })), review: reviewReportSchema.optional(), clarification: clarificationOutput.optional(), findings: z.array(z.object({ severity: z.enum(['blocker', 'warning']), location: z.string().trim().min(1), body: z.string().trim().min(1), targetLogicalId: z.string().optional() })).optional() });
 const documentInstructions = `文档双份输出协议：每个 artifacts 条目分别输出完整、严谨、可供后续 AI 执行的 Markdown content，以及供人快速阅读的 humanBrief。content 是唯一的执行依据，不得为了简报而缩写、删减或省略执行细节；明确本阶段适用的目标、范围与非目标、稳定的需求/决策/任务 ID、接口和输入输出、边界与约束、错误和异常处理、验收条件与验证方式、尚未确认的事项，并通过上游逻辑名称和条目 ID 记录追溯关系。不要虚构测试已通过或把未知信息写成事实。humanBrief 只提炼同一条 content 已写明的结论，不新增需求或执行指令；标题最多 120 字符、摘要最多 600 字符，用 2 至 6 个短章节呈现决策、范围、风险或下一步，每章标题最多 120 字符、1 至 6 条要点且每条最多 300 字符。没有依据的章节应省略，不得编造风险或下一步。简报全部使用纯文本，不输出 HTML、脚本、CSS 或外部资源，展示页面由应用生成。结构示例："humanBrief":{"title":"文档标题","summary":"本阶段的主要结论","sections":[{"title":"范围","items":["正文中已明确的范围"]},{"title":"验收","items":["正文中已明确的验证条件"]}]}。顶层 summary 只是本次运行概述，不能替代每份文档的 humanBrief。`;
@@ -86,25 +88,25 @@ export class EngineeringService {
       if (attempt.bindingId) this.schedule(attempt.id, () => this.reconcile(attempt.id));
     }
   }
-  async registerProject(rootPath: string, name?: string, demo = false) {
+  async registerProject(rootPath: string, name?: string, demo = false, locale: Locale = 'zh-CN') {
     const repo = await this.workspaces.inspect(rootPath);
     const existing = this.store.list('projects', x => x.rootPath === repo.rootPath)[0];
     if (existing) return existing;
     const project = this.store.create('projects', { name: name || repo.rootPath.split(/[\\/]/).pop()!, rootPath: repo.rootPath, baseCommit: repo.baseCommit,
-      rules: '代码必须可验证；需求与任务具有稳定 ID；所有 AI 产物需要独立复核；验证证据绑定代码版本。',
+      rules: translate('代码必须可验证；需求与任务具有稳定 ID；所有 AI 产物需要独立复核；验证证据绑定代码版本。', locale),
       defaults: demo ? { analyst: sandboxTargets[0], architect: sandboxTargets[0], developer: sandboxTargets[1], reviewer: sandboxTargets[2] } : {},
       commands: [{ id: 'test', executable: 'node', args: ['--test'], timeoutMs: 120000 }], demo,
       ...(!demo && this.hostOptions.defaultBackend ? { executionBackend: this.hostOptions.defaultBackend } : {}) });
     await this.guidance.refresh(project.id); return this.store.get('projects', project.id);
   }
-  async createWorkItem(projectId: string, name: string, request: string, kind: 'feature' | 'bug' | 'refactor' = 'feature', documents: RequirementDocument[] = []) {
+  async createWorkItem(projectId: string, name: string, request: string, kind: 'feature' | 'bug' | 'refactor' = 'feature', documents: RequirementDocument[] = [], locale: Locale = 'zh-CN') {
     validateRequirements(request, documents);
     const project = this.store.get('projects', projectId); const repo = await this.workspaces.inspect(project.rootPath);
     assert(!repo.dirty, 'BASELINE_DIRTY', '源仓库包含未提交改动，请先选择干净基线；应用不会自动提交或重置', repo.dirty);
     const space = await this.workspaces.create(project.rootPath, repo.baseCommit, 'item');
     const item = this.store.create('workItems', { projectId, name, request, kind, baseCommit: repo.baseCommit, acceptedCommit: repo.baseCommit, ...space, status: 'active' });
     this.requirements.current(item.id, documents);
-    const definition = defaultWorkflow();
+    const definition = defaultWorkflow(locale);
     const workflow = this.store.create('workflows', { workItemId: item.id, definition, definitionHash: hash(JSON.stringify(definition)) });
     this.createRun(workflow.id);
     return this.store.get('workItems', item.id);
@@ -310,7 +312,7 @@ export class EngineeringService {
       const sources: ReviewContext['sources'] = [
         ...(requirements.request.trim() ? [{ id: `requirement:${requirements.id}`, kind: 'requirement' as const, content: requirements.request }] : []),
         ...requirements.documents.map(d => ({ id: `requirement-document:${d.id}`, kind: 'requirement' as const, content: d.content })),
-        { id: `guidance:${guidance.contentHash}`, kind: 'guidance', content: guidanceText(guidance) },
+        { id: `guidance:${guidance.contentHash}`, kind: 'guidance', content: run.definition.locale === 'en' ? englishGuidanceText(guidance) : guidanceText(guidance) },
         ...reviewArtifactSources(this.store, bindings),
       ];
       if (candidate) {
@@ -320,7 +322,10 @@ export class EngineeringService {
       }
       review = { version: 1, groupId: id(), perspective: 'coverage', subjects, sources, criteria: createReviewCriteria(subjects.map(s => s.logicalId), sources.some(source => source.kind === 'human_brief')), priorFindings: priorFindings.map(f => ({ id: f.id, targetLogicalId: findingLogicalId(this.store, f)!, targetHash: f.targetHash, severity: f.severity, location: f.location, body: f.body })) };
     }
-    const normalizedPrompt = review ? this.reviewAttemptPrompt(def, workspace, review, target) : `${prompt}\n${documentInstructions}\n依据校验：先从原始需求和项目章程重建本阶段必须满足的条件，再核对上游产物。上一步已接纳或作者声称成功不能代替证据；发现上游矛盾、缺失或未经确认的假设时，返回指向对应产物的 blocker finding，不得静默沿用或伪造验证成功。${correction}`;
+    if (review && run.definition.locale === 'en') review.criteria = englishReviewCriteria(review.criteria);
+    const normalizedPrompt = review ? this.reviewAttemptPrompt(def, workspace, review, target, run.definition.locale) : run.definition.locale === 'en'
+      ? englishStagePrompt({ guidance, requirements, def, workspace, content, candidateContext, clarification, correction, toolInstructions: this.toolInstructions(target, def, 'en') })
+      : `${prompt}\n${documentInstructions}\n依据校验：先从原始需求和项目章程重建本阶段必须满足的条件，再核对上游产物。上一步已接纳或作者声称成功不能代替证据；发现上游矛盾、缺失或未经确认的假设时，返回指向对应产物的 blocker finding，不得静默沿用或伪造验证成功。${correction}`;
     const inputHash = hash(JSON.stringify({ bindings, requirementRevisionId: requirements.id, requirementHash: requirements.contentHash, baseline, rulesHash: guidance.contentHash, prompt: normalizedPrompt, target }));
     const attempt = this.store.tx(() => {
       const number = this.store.list('attempts', a => a.nodeRunId === nodeRunId).length + 1;
@@ -340,15 +345,16 @@ export class EngineeringService {
     this.schedule(attempt.id, () => this.executeAttempt(attempt.id)); return attempt;
   }
   private frozen(attempt: Attempt): FrozenInput {
-    const { item, def } = this.nodeContext(attempt.nodeRunId); const candidate = attempt.candidateId ? this.store.get('candidates', attempt.candidateId) : undefined;
-    return { attemptId: attempt.id, prompt: attempt.prompt, workspace: candidate?.workspace || item.workspace, target: attempt.target, readOnly: def.type === 'review' || def.role !== 'developer', maxSteps: def.maxSteps || 40, inputHash: attempt.inputHash, node: def, review: attempt.review, clarification: attempt.clarificationQuestions ? { questions: attempt.clarificationQuestions } : undefined,
+    const { item, def, run } = this.nodeContext(attempt.nodeRunId); const candidate = attempt.candidateId ? this.store.get('candidates', attempt.candidateId) : undefined;
+    return { locale: run.definition.locale, attemptId: attempt.id, prompt: attempt.prompt, workspace: candidate?.workspace || item.workspace, target: attempt.target, readOnly: def.type === 'review' || def.role !== 'developer', maxSteps: def.maxSteps || 40, inputHash: attempt.inputHash, node: def, review: attempt.review, clarification: attempt.clarificationQuestions ? { questions: attempt.clarificationQuestions } : undefined,
       artifacts: attempt.inputs.map(x => ({ logicalId: x.logicalId, content: this.store.get('artifactRevisions', x.artifactRevisionId).content, contentHash: x.contentHash })) };
   }
-  private toolInstructions(target: ModelTarget, def: WorkflowNode) {
-    return this.registry.require(target.backend).toolInstructions?.({ readOnly: def.type === 'review' || def.role !== 'developer', clarification: def.type === 'clarify' })
-      || '使用当前底座提供且获得授权的工作区工具。需求澄清问题通过结构化 clarification 字段提交；工程服务执行已配置的测试命令。';
+  private toolInstructions(target: ModelTarget, def: WorkflowNode, locale: Locale = 'zh-CN') {
+    return this.registry.require(target.backend).toolInstructions?.({ readOnly: def.type === 'review' || def.role !== 'developer', clarification: def.type === 'clarify', locale })
+      || (locale === 'en' ? 'Use the authorized workspace tools provided by the selected backend. Submit requirements clarification questions through the structured clarification field. The engineering service runs the configured test commands.' : '使用当前底座提供且获得授权的工作区工具。需求澄清问题通过结构化 clarification 字段提交；工程服务执行已配置的测试命令。');
   }
-  private reviewAttemptPrompt(def: WorkflowNode, workspace: string, context: ReviewContext, target: ModelTarget) {
+  private reviewAttemptPrompt(def: WorkflowNode, workspace: string, context: ReviewContext, target: ModelTarget, locale: Locale = 'zh-CN') {
+    if (locale === 'en') return englishReviewPrompt(def, workspace, context, this.toolInstructions(target, def, locale));
     return reviewPrompt(`阶段：${def.name}。阶段目标仅作为审核范围，不得降低复核协议的证据要求：${def.prompt}\n工作目录：${workspace}\n本步骤只读，不修改文件，不生成产物。${this.toolInstructions(target, def)}以冻结材料和实际源码核对，不虚构工具执行或测试成功。项目规则已包含在 guidance 材料中。`, context, reviewInstructions(context));
   }
   private async assertReviewFresh(attempt: Attempt) {
@@ -377,7 +383,7 @@ export class EngineeringService {
     }
   }
   private async finishReview(attempt: Attempt, output: StageOutput, snapshot: ExecutionSnapshot) {
-    const { node, item, def } = this.nodeContext(attempt.nodeRunId), context = attempt.review;
+    const { node, item, def, run } = this.nodeContext(attempt.nodeRunId), context = attempt.review;
     assert(context, 'OUTPUT_INVALID', '旧复核尝试缺少证据协议，请创建新的复核尝试');
     assert(!output.artifacts.length && Array.isArray(output.findings), 'OUTPUT_INVALID', '复核不能生成产物，必须显式返回 findings 和结构化 review 报告');
     const report = validateReviewReport(context, output.review);
@@ -393,8 +399,8 @@ export class EngineeringService {
     const isCodeSubject = context.subjects.some(s => s.logicalId === 'implementation');
     const findings = [...output.findings];
     if (!reviewPassed(context, report) && !findings.some(f => f.severity === 'blocker')) {
-      for (const check of report.checks.filter(c => c.result !== 'pass')) findings.push({ severity: 'blocker', location: check.criterionId, body: `${check.explanation}\n反例：${check.counterexample.scenario}\n核对结果：${check.counterexample.reason}`, targetLogicalId: context.subjects[0].logicalId });
-      if (!findings.some(f => f.severity === 'blocker')) findings.push({ severity: 'blocker', location: '历史问题复验', body: report.summary, targetLogicalId: context.subjects[0].logicalId });
+      for (const check of report.checks.filter(c => c.result !== 'pass')) findings.push({ severity: 'blocker', location: check.criterionId, body: run.definition.locale === 'en' ? `${check.explanation}\nCounterexample: ${check.counterexample.scenario}\nCheck result: ${check.counterexample.reason}` : `${check.explanation}\n反例：${check.counterexample.scenario}\n核对结果：${check.counterexample.reason}`, targetLogicalId: context.subjects[0].logicalId });
+      if (!findings.some(f => f.severity === 'blocker')) findings.push({ severity: 'blocker', location: run.definition.locale === 'en' ? 'Historical finding recheck' : '历史问题复验', body: report.summary, targetLogicalId: context.subjects[0].logicalId });
     }
     let nextAttempt: Attempt | undefined;
     this.store.tx(() => {
@@ -405,7 +411,7 @@ export class EngineeringService {
       this.store.update('attempts', attempt.id, { execution: 'completed', reviewReport: report, output: snapshot.output, usage: snapshot.usage, finishedAt: now() });
       if (context.perspective === 'coverage') {
         const nextContext: ReviewContext = { ...structuredClone(context), perspective: 'adversarial' };
-        const prompt = this.reviewAttemptPrompt(def, this.frozen(attempt).workspace, nextContext, attempt.target);
+        const prompt = this.reviewAttemptPrompt(def, this.frozen(attempt).workspace, nextContext, attempt.target, this.frozen(attempt).locale);
         nextAttempt = this.store.create('attempts', { nodeRunId: node.id, number: this.store.list('attempts', a => a.nodeRunId === node.id).length + 1, inputs: attempt.inputs, requirementRevisionId: attempt.requirementRevisionId, guidance: attempt.guidance, review: nextContext, inputHash: hash(JSON.stringify({ groupId: context.groupId, originalInputHash: attempt.inputHash, prompt })), target: attempt.target, prompt, codeBaseline: attempt.codeBaseline, candidateId: attempt.candidateId, execution: 'pending', startedAt: now() });
         this.store.update('nodes', node.id, { execution: 'starting', currentAttemptId: nextAttempt.id, gate: 'unchecked', acceptance: 'pending', blockers: ['需求覆盖核对已结束，正在独立检查反例与失败路径'] });
       } else {
@@ -483,7 +489,7 @@ export class EngineeringService {
       const task = tasks.find(t => !verified.has(t.taskId) && t.dependsOn.every(d => verified.has(d)))!;
       if (!task) throw new DomainError('TASKS_INVALID', '任务依赖无法调度');
       this.store.update('tasks', task.id, { state: 'running' });
-      const taskInput = { ...input, task, attemptId: `${attemptId}-task-${task.taskId}`, prompt: `${input.prompt}\n当前任务：${task.taskId} ${task.name}\n仅完成该任务。` };
+      const taskInput = { ...input, task, attemptId: `${attemptId}-task-${task.taskId}`, prompt: input.locale === 'en' ? `${input.prompt}\nCurrent task: ${task.taskId} ${task.name}\nComplete this task only.` : `${input.prompt}\n当前任务：${task.taskId} ${task.name}\n仅完成该任务。` };
       ref = await this.registry.require(attempt.target.backend).prepare(taskInput);
       const parent = this.store.get('attempts', attemptId).bindingId;
       const taskBinding = this.store.create('bindings', { attemptId, ref, parentBindingId: parent, kind: 'initial', taskId: task.taskId });
@@ -560,7 +566,7 @@ export class EngineeringService {
       const spec = output.artifacts[0].content;
       assert(spec.trim().length >= 20 && !/\[NEEDS CLARIFICATION\]|\bTODO\b/.test(spec), 'OUTPUT_INVALID', '澄清后的规格仍有未决信息，请继续澄清');
       this.store.tx(() => {
-        const revision = this.artifacts.create(item.id, 'spec', appendClarificationRecord(spec, session), attempt.inputs.filter(i => i.logicalId !== 'spec'), attempt.id, undefined, { supersedesRevisionId: session.sourceSpecRevisionId, clarificationSessionId: session.id, humanBrief: output.artifacts[0].humanBrief });
+        const revision = this.artifacts.create(item.id, 'spec', appendClarificationRecord(spec, session, run.definition.locale), attempt.inputs.filter(i => i.logicalId !== 'spec'), attempt.id, undefined, { supersedesRevisionId: session.sourceSpecRevisionId, clarificationSessionId: session.id, humanBrief: output.artifacts[0].humanBrief });
         this.store.update('clarifications', session.id, { state: 'completed', resultSpecRevisionId: revision.id });
         this.store.update('nodes', node.id, { execution: 'completed', gate: 'passed', freshness: 'fresh', blockers: [], error: undefined });
         this.store.update('attempts', attemptId, { execution: 'completed', finishedAt: now(), output: snapshot.output, usage: snapshot.usage });
@@ -875,15 +881,15 @@ export class EngineeringService {
     return { item, requirements: { current, history: this.store.list('requirementRevisions', r => r.workItemId === item.id) }, clarifications, clarificationDrafts: this.store.list('clarificationDrafts', d => clarificationIds.has(d.sessionId)), project: this.store.get('projects', item.projectId), workflows: this.store.list('workflows', w => w.workItemId === item.id), runs, nodes, attempts: visibleAttempts,
       bindings: this.store.list('bindings', b => attemptIds.has(b.attemptId)), artifacts, revisions, findings: this.store.list('findings', f => f.workItemId === item.id), evidence: this.store.list('evidence', e => e.workItemId === item.id), candidates: this.store.list('candidates', c => c.workItemId === item.id), tasks: this.store.list('tasks', t => nodeIds.has(t.nodeRunId)), comments: this.store.list('comments', c => revisionIds.has(c.artifactRevisionId)), decisions: this.store.list('decisions', d => d.workItemId === item.id), interactions: this.store.list('interactions', i => attemptIds.has(i.attemptId)) };
   }
-  async seedDemo() {
+  async seedDemo(locale: Locale = 'zh-CN') {
     const existing = this.store.list('projects', p => p.demo)[0]; if (existing) return existing;
     const path = join(this.dataDir, 'demo-source'); await mkdir(path, { recursive: true });
     await writeFile(join(path, 'package.json'), JSON.stringify({ name: 'csv-import-acceptance', private: true, type: 'module', scripts: { test: 'node --test' } }, null, 2));
     await writeFile(join(path, 'csv.js'), 'export function parseCsv(text) { return text.trim().split("\\n").map(line => line.split(",")); }\n');
-    await writeFile(join(path, 'csv.test.js'), `import test from 'node:test';\nimport assert from 'node:assert/strict';\nimport { parseCsv } from './csv.js';\ntest('普通字段', () => assert.deepEqual(parseCsv('name,age\\nAda,31'), [['name','age'],['Ada','31']]));\ntest('引号中的逗号', () => assert.deepEqual(parseCsv('"a,b",c'), [['a,b','c']]));\ntest('转义引号', () => assert.deepEqual(parseCsv('"a""b",c'), [['a"b','c']]));\ntest('CRLF', () => assert.deepEqual(parseCsv('a,b\\r\\nc,d'), [['a','b'],['c','d']]));\ntest('未闭合引号', () => assert.throws(() => parseCsv('"a,b')));\n`);
+    await writeFile(join(path, 'csv.test.js'), locale === 'en' ? `import test from 'node:test';\nimport assert from 'node:assert/strict';\nimport { parseCsv } from './csv.js';\ntest('Plain fields', () => assert.deepEqual(parseCsv('name,age\\nAda,31'), [['name','age'],['Ada','31']]));\ntest('Quoted commas', () => assert.deepEqual(parseCsv('"a,b",c'), [['a,b','c']]));\ntest('Escaped quotes', () => assert.deepEqual(parseCsv('"a""b",c'), [['a"b','c']]));\ntest('CRLF', () => assert.deepEqual(parseCsv('a,b\\r\\nc,d'), [['a','b'],['c','d']]));\ntest('Unclosed quotes', () => assert.throws(() => parseCsv('"a,b')));\n` : `import test from 'node:test';\nimport assert from 'node:assert/strict';\nimport { parseCsv } from './csv.js';\ntest('普通字段', () => assert.deepEqual(parseCsv('name,age\\nAda,31'), [['name','age'],['Ada','31']]));\ntest('引号中的逗号', () => assert.deepEqual(parseCsv('"a,b",c'), [['a,b','c']]));\ntest('转义引号', () => assert.deepEqual(parseCsv('"a""b",c'), [['a"b','c']]));\ntest('CRLF', () => assert.deepEqual(parseCsv('a,b\\r\\nc,d'), [['a','b'],['c','d']]));\ntest('未闭合引号', () => assert.throws(() => parseCsv('"a,b')));\n`);
     await this.workspaces.git(path, ['init']); await this.workspaces.checkpoint(path, 'Initialize isolated CSV acceptance repository');
-    const project = await this.registerProject(path, 'CSV 导入验收项目', true);
-    await this.createWorkItem(project.id, '为现有项目增加 CSV 导入', '支持普通字段、引号中逗号、双引号转义、CRLF 和错误输入。');
+    const project = await this.registerProject(path, translate('CSV 导入验收项目', locale), true, locale);
+    await this.createWorkItem(project.id, translate('为现有项目增加 CSV 导入', locale), translate('支持普通字段、引号中逗号、双引号转义、CRLF 和错误输入。', locale), 'feature', [], locale);
     return project;
   }
   async waitForIdle() { while (this.jobs.size) await Promise.all([...this.jobs.values()]); }

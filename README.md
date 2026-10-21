@@ -22,11 +22,11 @@
 <br>
 
 <p align="center">
-  <img src="docs/implementation/frontend-workbench-qa/desktop-flow.png" alt="SpecFlow desktop workbench showing the completed CSV demo, workflow checkpoints, and linked documents" width="1000">
+  <img src="docs/implementation/localization-qa/desktop-flow-en.png" alt="SpecFlow English workbench showing the CSV import demo, workflow checkpoints, and linked documents" width="1000">
 </p>
 
 <p align="center">
-  <sub>The built-in CSV demo. The current interface and workflow prompts are primarily in Chinese.</sub>
+  <sub>The built-in CSV demo in the English workbench. Switch between English and Simplified Chinese from the header.</sub>
 </p>
 
 <br>
@@ -59,6 +59,10 @@ Review passes examine coverage and failure cases against the same frozen materia
 Review documents, diffs, findings, and test results at each checkpoint. Before you accept a change, SpecFlow checks that the required evidence still matches the current work.
 
 ## Get started
+
+Choose **English** or **中文** in the workbench header. On first launch the interface follows your system or browser language; your selection is saved. The desktop menu, dialogs, status messages, and document exports follow the selected interface language.
+
+New work items use the selected language for their default workflow, generated documents, briefs, and clarification questions. To change the output language for a new run of an existing work item, open the workflow editor and choose **Generated content language**. Existing attempts, user content, code, logs, and quoted evidence retain their original text. The DeepSeek Harness plugin provides the same language selector within its panel.
 
 ### Desktop app
 

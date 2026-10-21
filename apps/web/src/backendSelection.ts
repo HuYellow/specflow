@@ -1,3 +1,4 @@
+import { localizedLabels, t } from './i18n.ts';
 import type { BackendId, ModelTarget, Project } from '../../../packages/domain/index.ts';
 import type { BackendCapabilities } from '../../../packages/execution-contract/index.ts';
 
@@ -11,20 +12,20 @@ export interface BackendCatalog {
   configuration: { opencode: { baseUrl: string; username: string; hasPassword: boolean } };
 }
 
-export const backendNames: Record<BackendId, string> = { maka: 'Maka Runtime Host', opencode: 'OpenCode', sandbox: 'Sandbox 示例', dsh: 'DeepSeek Harness' };
+export const backendNames = localizedLabels({ maka: 'Maka Runtime Host', opencode: 'OpenCode', sandbox: 'Sandbox 示例', dsh: 'DeepSeek Harness' }) as Record<BackendId, string>;
 
 export function projectBackend(project?: Pick<Project, 'executionBackend' | 'demo'>): BackendId {
   return project?.executionBackend || (project?.demo ? 'sandbox' : 'maka');
 }
 
 export function backendInfo(catalog: BackendCatalog | undefined, id: BackendId) {
-  return catalog?.backends?.find(backend => backend.id === id)
-    || { id, name: backendNames[id], capabilities: catalog?.[id], configurable: id !== 'sandbox' };
+  const backend = catalog?.backends?.find(backend => backend.id === id);
+  return backend ? { ...backend, name: t(backend.name) } : { id, name: backendNames[id], capabilities: catalog?.[id], configurable: id !== 'sandbox' };
 }
 
 export function projectBackendOptions(catalog: BackendCatalog | undefined, project?: Pick<Project, 'demo'>) {
   const registered = catalog?.backends || (['maka', 'opencode', 'sandbox'] as BackendId[]).map(id => backendInfo(catalog, id));
-  return registered.filter(backend => backend.id !== 'sandbox' || project?.demo);
+  return registered.filter(backend => backend.id !== 'sandbox' || project?.demo).map(backend => ({ ...backend, name: t(backend.name) }));
 }
 
 export function targetsForBackend(targets: ModelTarget[], id: BackendId): ModelTarget[] {
@@ -53,7 +54,7 @@ export function currentTargetOverride(value: string, id: BackendId): ModelTarget
 }
 
 export function targetLabel(target?: ModelTarget): string {
-  return target ? `${backendNames[target.backend]} · ${target.connectionSlug} / ${target.model}` : '尚未配置';
+  return target ? `${backendNames[target.backend]} · ${t(target.connectionSlug)} / ${target.model}` : t('尚未配置');
 }
 
 export function openCodeConfiguration(baseUrl: string, username: string, password: string | undefined) {

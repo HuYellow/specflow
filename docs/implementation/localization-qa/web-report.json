@@ -1,0 +1,285 @@
+{
+  "testedAt": "2026-10-21T15:04:56.682Z",
+  "dataDir": "C:\\Users\\huyel\\AppData\\Local\\Temp\\specflow-localization-smoke-dbnPFA",
+  "checks": [
+    "English demo produces accepted specifications, design and tasks, candidate code, and real verification evidence.",
+    "All five tabs render in English at 1440×1000 and 390×1000 without visible app-owned Chinese text or horizontal body overflow.",
+    "Project settings, project registration, new work item, workflow editor, and import modals render in English at both viewport sizes.",
+    "English → Chinese → English keeps the unsaved requirements draft; reload restores English and the exact draft.",
+    "HTML download honors English even when browser Accept-Language is Chinese.",
+    "Run details drawer renders frozen execution identity and controls in English on desktop and mobile."
+  ],
+  "surfaces": [
+    {
+      "name": "1440-flow",
+      "chinese": [],
+      "attrs": [],
+      "width": 1440,
+      "scrollWidth": 1440,
+      "overflowing": []
+    },
+    {
+      "name": "1440-requirements",
+      "chinese": [],
+      "attrs": [],
+      "width": 1440,
+      "scrollWidth": 1440,
+      "overflowing": []
+    },
+    {
+      "name": "1440-artifacts",
+      "chinese": [],
+      "attrs": [],
+      "width": 1440,
+      "scrollWidth": 1440,
+      "overflowing": []
+    },
+    {
+      "name": "1440-artifacts-execution",
+      "chinese": [],
+      "attrs": [],
+      "width": 1440,
+      "scrollWidth": 1440,
+      "overflowing": []
+    },
+    {
+      "name": "1440-artifacts-compare",
+      "chinese": [],
+      "attrs": [],
+      "width": 1440,
+      "scrollWidth": 1440,
+      "overflowing": []
+    },
+    {
+      "name": "1440-code",
+      "chinese": [],
+      "attrs": [],
+      "width": 1440,
+      "scrollWidth": 1440,
+      "overflowing": []
+    },
+    {
+      "name": "1440-runs",
+      "chinese": [],
+      "attrs": [],
+      "width": 1440,
+      "scrollWidth": 1440,
+      "overflowing": []
+    },
+    {
+      "name": "390-flow",
+      "chinese": [],
+      "attrs": [],
+      "width": 390,
+      "scrollWidth": 390,
+      "overflowing": []
+    },
+    {
+      "name": "390-requirements",
+      "chinese": [],
+      "attrs": [],
+      "width": 390,
+      "scrollWidth": 390,
+      "overflowing": []
+    },
+    {
+      "name": "390-artifacts",
+      "chinese": [],
+      "attrs": [],
+      "width": 390,
+      "scrollWidth": 390,
+      "overflowing": []
+    },
+    {
+      "name": "390-artifacts-execution",
+      "chinese": [],
+      "attrs": [],
+      "width": 390,
+      "scrollWidth": 390,
+      "overflowing": []
+    },
+    {
+      "name": "390-artifacts-compare",
+      "chinese": [],
+      "attrs": [],
+      "width": 390,
+      "scrollWidth": 390,
+      "overflowing": [
+        {
+          "tag": "DIV",
+          "class": "review-line context",
+          "text": "44 Convert CSV into rows of records, supporting commas, quotes, and newlines."
+        },
+        {
+          "tag": "CODE",
+          "class": "",
+          "text": "Convert CSV into rows of records, supporting commas, quotes, and newlines."
+        },
+        {
+          "tag": "DIV",
+          "class": "review-line context",
+          "text": "77 - FR01: Parse ordinary comma-separated records correctly."
+        },
+        {
+          "tag": "CODE",
+          "class": "",
+          "text": "- FR01: Parse ordinary comma-separated records correctly."
+        },
+        {
+          "tag": "DIV",
+          "class": "review-line context",
+          "text": "88 - FR02: Preserve commas and newlines inside quoted fields."
+        },
+        {
+          "tag": "CODE",
+          "class": "",
+          "text": "- FR02: Preserve commas and newlines inside quoted fields."
+        },
+        {
+          "tag": "DIV",
+          "class": "review-line context",
+          "text": "99 - FR03: Parse escaped quotes as a single quote."
+        },
+        {
+          "tag": "CODE",
+          "class": "",
+          "text": "- FR03: Parse escaped quotes as a single quote."
+        },
+        {
+          "tag": "DIV",
+          "class": "review-line context",
+          "text": "1010 - FR04: Throw a clear error for an unclosed quoted field."
+        },
+        {
+          "tag": "CODE",
+          "class": "",
+          "text": "- FR04: Throw a clear error for an unclosed quoted field."
+        },
+        {
+          "tag": "DIV",
+          "class": "review-line context",
+          "text": "1313 - Q001 How should an unclosed quoted CSV field be handled?: Throw a clear error"
+        },
+        {
+          "tag": "CODE",
+          "class": "",
+          "text": "- Q001 How should an unclosed quoted CSV field be handled?: Throw a clear error"
+        }
+      ]
+    },
+    {
+      "name": "390-code",
+      "chinese": [],
+      "attrs": [],
+      "width": 390,
+      "scrollWidth": 390,
+      "overflowing": []
+    },
+    {
+      "name": "390-runs",
+      "chinese": [],
+      "attrs": [],
+      "width": 390,
+      "scrollWidth": 390,
+      "overflowing": []
+    },
+    {
+      "name": "1440-modal-settings",
+      "chinese": [],
+      "attrs": [],
+      "width": 1440,
+      "scrollWidth": 1440,
+      "overflowing": []
+    },
+    {
+      "name": "1440-modal-project",
+      "chinese": [],
+      "attrs": [],
+      "width": 1440,
+      "scrollWidth": 1440,
+      "overflowing": []
+    },
+    {
+      "name": "1440-modal-item",
+      "chinese": [],
+      "attrs": [],
+      "width": 1440,
+      "scrollWidth": 1440,
+      "overflowing": []
+    },
+    {
+      "name": "1440-modal-workflow",
+      "chinese": [],
+      "attrs": [],
+      "width": 1440,
+      "scrollWidth": 1440,
+      "overflowing": []
+    },
+    {
+      "name": "1440-modal-import",
+      "chinese": [],
+      "attrs": [],
+      "width": 1440,
+      "scrollWidth": 1440,
+      "overflowing": []
+    },
+    {
+      "name": "390-modal-settings",
+      "chinese": [],
+      "attrs": [],
+      "width": 390,
+      "scrollWidth": 390,
+      "overflowing": []
+    },
+    {
+      "name": "390-modal-project",
+      "chinese": [],
+      "attrs": [],
+      "width": 390,
+      "scrollWidth": 390,
+      "overflowing": []
+    },
+    {
+      "name": "390-modal-item",
+      "chinese": [],
+      "attrs": [],
+      "width": 390,
+      "scrollWidth": 390,
+      "overflowing": []
+    },
+    {
+      "name": "390-modal-workflow",
+      "chinese": [],
+      "attrs": [],
+      "width": 390,
+      "scrollWidth": 390,
+      "overflowing": []
+    },
+    {
+      "name": "390-modal-import",
+      "chinese": [],
+      "attrs": [],
+      "width": 390,
+      "scrollWidth": 390,
+      "overflowing": []
+    },
+    {
+      "name": "1440-run-drawer",
+      "chinese": [],
+      "attrs": [],
+      "width": 1440,
+      "scrollWidth": 1440,
+      "overflowing": []
+    },
+    {
+      "name": "390-run-drawer",
+      "chinese": [],
+      "attrs": [],
+      "width": 390,
+      "scrollWidth": 390,
+      "overflowing": []
+    }
+  ],
+  "errors": [],
+  "success": true
+}

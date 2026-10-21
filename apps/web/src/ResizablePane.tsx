@@ -1,3 +1,4 @@
+import { t } from './i18n.ts';
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { PanelRightClose, PanelRightOpen, X } from 'lucide-react';
@@ -82,15 +83,15 @@ export function ResizablePane({ children, context, overlayOpen = false }: { chil
   };
   const shown = wide && !collapsed;
   return <div ref={shell} className="flow-pane-shell">
-    <div className="flow-layout-controls"><button ref={trigger} className="text-button" aria-expanded={wide ? shown : modalActive} aria-controls="flow-step-context" onClick={() => { if (wide) setCollapsed(!collapsed); else if (viewportWidth >= 1120 && sizing.inlineAllowed) { setSpaceCollapsed(false); setCollapsed(false); } else setDrawerOpen(!drawerOpen); }}>{shown ? <PanelRightClose size={16} /> : <PanelRightOpen size={16} />}{shown ? '收起上下文' : '步骤上下文'}</button></div>
+    <div className="flow-layout-controls"><button ref={trigger} className="text-button" aria-expanded={wide ? shown : modalActive} aria-controls="flow-step-context" onClick={() => { if (wide) setCollapsed(!collapsed); else if (viewportWidth >= 1120 && sizing.inlineAllowed) { setSpaceCollapsed(false); setCollapsed(false); } else setDrawerOpen(!drawerOpen); }}>{shown ? <PanelRightClose size={16} /> : <PanelRightOpen size={16} />}{shown ? t("收起上下文") : t("步骤上下文")}</button></div>
     <div className={`flow-workbench${shown ? ' has-context' : ''}${dragging ? ' is-resizing' : ''}`} style={{ '--flow-context-width': `${paneWidth}px` } as CSSProperties}>
       <section className="flow-workspace-primary">{children}</section>
-      {shown && <div ref={separator} className="flow-pane-separator" role="separator" tabIndex={0} aria-label="调整步骤上下文宽度" aria-controls="flow-step-context" aria-orientation="vertical" aria-valuemin={MIN_WIDTH} aria-valuemax={maxWidth} aria-valuenow={paneWidth}
+      {shown && <div ref={separator} className="flow-pane-separator" role="separator" tabIndex={0} aria-label={t("调整步骤上下文宽度")} aria-controls="flow-step-context" aria-orientation="vertical" aria-valuemin={MIN_WIDTH} aria-valuemax={maxWidth} aria-valuenow={paneWidth}
         onPointerDown={event => { if (event.button !== 0) return; event.preventDefault(); event.currentTarget.focus(); drag.current = { pointerId: event.pointerId, startX: event.clientX, startWidth: paneWidth, moved: false }; event.currentTarget.setPointerCapture(event.pointerId); setDragging(true); }}
         onPointerMove={move} onPointerUp={() => finishDrag()} onPointerCancel={() => finishDrag(true)} onLostPointerCapture={() => finishDrag(true)} onDoubleClick={() => setWidth(DEFAULT_WIDTH)}
         onKeyDown={event => { const step = event.shiftKey ? 40 : 10; if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) { event.preventDefault(); setWidth(event.key === 'Home' ? MIN_WIDTH : event.key === 'End' ? maxWidth : Math.min(maxWidth, clampWidth(paneWidth + (event.key === 'ArrowLeft' ? step : -step)))); } }} />}
-      {shown && <aside id="flow-step-context" className="flow-context inspector" aria-label="步骤上下文">{context}</aside>}
+      {shown && <aside id="flow-step-context" className="flow-context inspector" aria-label={t("步骤上下文")}>{context}</aside>}
     </div>
-    {modalActive && createPortal(<div className="flow-context-backdrop" onClick={event => { if (event.target === event.currentTarget) setDrawerOpen(false); }}><aside ref={drawer} id="flow-step-context" className="flow-context flow-context-drawer inspector" role="dialog" aria-modal="true" aria-label="步骤上下文" tabIndex={-1}><div className="flow-context-drawer-heading"><strong>步骤上下文</strong><button className="icon-button" aria-label="关闭步骤上下文" onClick={() => setDrawerOpen(false)}><X size={19} /></button></div>{context}</aside></div>, document.body)}
+    {modalActive && createPortal(<div className="flow-context-backdrop" onClick={event => { if (event.target === event.currentTarget) setDrawerOpen(false); }}><aside ref={drawer} id="flow-step-context" className="flow-context flow-context-drawer inspector" role="dialog" aria-modal="true" aria-label={t("步骤上下文")} tabIndex={-1}><div className="flow-context-drawer-heading"><strong>{t("步骤上下文")}</strong><button className="icon-button" aria-label={t("关闭步骤上下文")} onClick={() => setDrawerOpen(false)}><X size={19} /></button></div>{context}</aside></div>, document.body)}
   </div>;
 }

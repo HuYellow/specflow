@@ -1,3 +1,4 @@
+import { t } from './i18n.ts';
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, ChevronDown, FolderGit2 } from 'lucide-react';
@@ -38,20 +39,20 @@ export function WorkspaceSwitcher({ projects, value, disabled, onChange }: { pro
     return () => document.removeEventListener('pointerdown', outside);
   }, [open]);
   return <>
-    <button ref={trigger} type="button" className={`project-selector workspace-selector ${open ? 'is-open' : ''}`} aria-label="工程工作空间" aria-haspopup="listbox" aria-expanded={open} aria-controls={open ? menuId : undefined} data-current-workspace={value} disabled={disabled} onClick={() => open ? close() : show()} onKeyDown={event => {
+    <button ref={trigger} type="button" className={`project-selector workspace-selector ${open ? 'is-open' : ''}`} aria-label={t("工程工作空间")} aria-haspopup="listbox" aria-expanded={open} aria-controls={open ? menuId : undefined} data-current-workspace={value} disabled={disabled} onClick={() => open ? close() : show()} onKeyDown={event => {
       if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); show(); }
       if (event.key === 'Escape') close(true);
     }}>
-      <FolderGit2 size={19} /><span className="workspace-selected-name">{current?.name || '选择工程工作空间'}</span><span className="workspace-toggle-icon" data-testid="workspace-toggle-arrow"><ChevronDown size={16} /></span>
+      <FolderGit2 size={19} /><span className="workspace-selected-name">{current?.name || t("选择工程工作空间")}</span><span className="workspace-toggle-icon" data-testid="workspace-toggle-arrow"><ChevronDown size={16} /></span>
     </button>
-    <div className="workspace-directory" title={current?.rootPath}>{current?.rootPath || '打开项目目录创建工作空间'}</div>
-    {open && createPortal(<div ref={menu} id={menuId} className="workspace-options" role="listbox" aria-label="工程工作空间选项" style={position} onKeyDown={event => {
+    <div className="workspace-directory" title={current?.rootPath}>{current?.rootPath || t("打开项目目录创建工作空间")}</div>
+    {open && createPortal(<div ref={menu} id={menuId} className="workspace-options" role="listbox" aria-label={t("工程工作空间选项")} style={position} onKeyDown={event => {
       if (event.key === 'ArrowDown') { event.preventDefault(); setActiveIndex(index => (index + 1) % projects.length); }
       else if (event.key === 'ArrowUp') { event.preventDefault(); setActiveIndex(index => (index - 1 + projects.length) % projects.length); }
       else if (event.key === 'Home') { event.preventDefault(); setActiveIndex(0); }
       else if (event.key === 'End') { event.preventDefault(); setActiveIndex(projects.length - 1); }
       else if (event.key === 'Escape') { event.preventDefault(); close(true); }
       else if (event.key === 'Tab') close(true);
-    }}><div className="workspace-options-heading">选择工程工作空间 <span>{projects.length}</span></div>{projects.map((project, index) => <button ref={element => { options.current[index] = element; }} key={project.id} type="button" role="option" aria-selected={project.id === value} tabIndex={index === activeIndex ? 0 : -1} data-project-id={project.id} className={`workspace-option ${project.id === value ? 'selected' : ''}`} onFocus={() => setActiveIndex(index)} onClick={() => choose(project.id)}><FolderGit2 size={18} /><span><strong>{project.name}</strong><small>{project.rootPath}</small></span>{project.id === value && <Check size={16} />}</button>)}</div>, document.body)}
+    }}><div className="workspace-options-heading">{t("选择工程工作空间")} <span>{projects.length}</span></div>{projects.map((project, index) => <button ref={element => { options.current[index] = element; }} key={project.id} type="button" role="option" aria-selected={project.id === value} tabIndex={index === activeIndex ? 0 : -1} data-project-id={project.id} className={`workspace-option ${project.id === value ? 'selected' : ''}`} onFocus={() => setActiveIndex(index)} onClick={() => choose(project.id)}><FolderGit2 size={18} /><span><strong>{project.name}</strong><small>{project.rootPath}</small></span>{project.id === value && <Check size={16} />}</button>)}</div>, document.body)}
   </>;
 }

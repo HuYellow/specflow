@@ -1,3 +1,4 @@
+import { t } from './i18n.ts';
 import { Fragment, useMemo, type ReactNode } from 'react';
 import { safeMarkdownHref } from './review-model.ts';
 
@@ -12,7 +13,7 @@ function inline(text: string): ReactNode[] {
     else {
       const link = /^(!?)\[([^\]]+)\]\(([^)]+)\)$/.exec(value)!;
       const href = safeMarkdownHref(link[3]);
-      output.push(href && !link[1] ? <a key={key} href={href} target={href.startsWith('#') ? undefined : '_blank'} rel="noreferrer">{link[2]}</a> : <Fragment key={key}>{link[1] ? `[图片：${link[2]}]` : link[2]}</Fragment>);
+      output.push(href && !link[1] ? <a key={key} href={href} target={href.startsWith('#') ? undefined : '_blank'} rel="noreferrer">{link[2]}</a> : <Fragment key={key}>{link[1] ? t("[图片：{value0}]", { value0: link[2] }) : link[2]}</Fragment>);
     }
     offset = token.lastIndex;
   }
@@ -20,6 +21,7 @@ function inline(text: string): ReactNode[] {
 }
 
 export function MarkdownView({ content, idPrefix = 'document', onSelectText }: { content: string; idPrefix?: string; onSelectText?(text: string): void }) {
+  const imagePlaceholder = t('[图片：{value0}]', { value0: '' });
   const parsed = useMemo(() => {
     const blocks: ReactNode[] = [], headings: { id: string; text: string; depth: number }[] = [];
     const lines = content.replace(/\r\n/g, '\n').split('\n'); let i = 0;
@@ -65,6 +67,6 @@ export function MarkdownView({ content, idPrefix = 'document', onSelectText }: {
       blocks.push(<p key={start}>{inline(paragraph.join('\n'))}</p>);
     }
     return { blocks, headings };
-  }, [content, idPrefix]);
-  return <div className="markdown-layout">{parsed.headings.length > 0 && <nav className="markdown-toc" aria-label="文档目录"><strong>目录</strong>{parsed.headings.map(heading => <a key={heading.id} href={`#${heading.id}`} style={{ paddingInlineStart: `${Math.min(heading.depth - 1, 3) * 10}px` }}>{heading.text}</a>)}</nav>}<article className="markdown-document" aria-label="Markdown 预览" onMouseUp={() => { const selection = window.getSelection(); if (selection && selection.toString()) onSelectText?.(selection.toString()); }}>{parsed.blocks}</article></div>;
+  }, [content, idPrefix, imagePlaceholder]);
+  return <div className="markdown-layout">{parsed.headings.length > 0 && <nav className="markdown-toc" aria-label={t("文档目录")}><strong>{t("目录")}</strong>{parsed.headings.map(heading => <a key={heading.id} href={`#${heading.id}`} style={{ paddingInlineStart: `${Math.min(heading.depth - 1, 3) * 10}px` }}>{heading.text}</a>)}</nav>}<article className="markdown-document" aria-label={t("Markdown 预览")} onMouseUp={() => { const selection = window.getSelection(); if (selection && selection.toString()) onSelectText?.(selection.toString()); }}>{parsed.blocks}</article></div>;
 }

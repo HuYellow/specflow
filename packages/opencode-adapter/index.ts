@@ -37,7 +37,12 @@ export class OpenCodeBackend implements ExecutionBackend {
     this.baseUrl = normalizeOpenCodeUrl(options.baseUrl);
     this.rootId = `opencode-${hash(JSON.stringify([this.baseUrl, resolve(options.stateDir), resolve(options.workspaceRoot), options.username || 'opencode'])).slice(0, 32)}`;
   }
-  toolInstructions(input: { readOnly: boolean; clarification: boolean }): string {
+  toolInstructions(input: { readOnly: boolean; clarification: boolean; locale?: 'zh-CN' | 'en' }): string {
+    if (input.locale === 'en') return [
+      'The execution backend is OpenCode. Use its native read, glob, grep, and list tools to read and search within the current isolated workspace; available tools are determined by the current session catalog.',
+      input.readOnly ? 'This stage is read-only. Under the trusted user-level tool configuration, permission rules prohibit shell, editing, writing, tools outside the read allowlist, and subagents. Do not modify any files. Return the complete structured stage result directly.' : 'Use the edit, write, apply_patch, or bash tools provided by the current session for changes; operations may require the user to authorize them for this attempt. Restrict all files and commands to the current isolated workspace. Do not change to external directories or invoke subagents. Do not create or modify .opencode, opencode.json, or opencode.jsonc, to prevent executable configuration injection in the execution directory.',
+      input.clarification ? 'Place requirements clarification questions in clarification.questions in the final stage JSON, following the specified structure. Do not substitute the question tool for requirements clarification records that must be saved.' : 'Use the question tool when the user must provide additional information during execution. The final result must be complete JSON following the stage contract.',
+    ].join('\n');
     return [
       '执行底座为 OpenCode。使用其原生 read、glob、grep、list 工具在当前隔离工作区内读取和搜索；工具是否提供以当前会话工具目录为准。',
       input.readOnly ? '本阶段为只读阶段；在可信用户级工具配置下，权限规则禁止 shell、编辑、写入以及读取白名单以外的工具和子代理。不得修改任何文件；请直接输出要求的完整结构化阶段结果。' : '需要修改时使用当前会话提供的 edit、write、apply_patch 或 bash 工具，操作可能要求用户本次授权；所有文件和命令必须限制在当前隔离工作区内，禁止切换到外部目录或调用子代理。不得创建或修改 .opencode、opencode.json 或 opencode.jsonc，避免在执行目录注入可执行配置。',

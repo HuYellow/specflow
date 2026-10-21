@@ -9,10 +9,12 @@ import { backendIds, DomainError, compileWorkflow, hash, type WorkflowDefinition
 import { EngineeringService } from './service.ts';
 import { MakaBackend } from '../../../packages/maka-adapter/index.ts';
 import { UserCodeReview } from './user-review.ts';
+import { normalizeLocale } from '../../../packages/i18n/index.ts';
+import { localizeApiResponse } from './localization.ts';
 
 const target = z.object({ backend: z.enum(backendIds), connectionId: z.string().min(1), connectionSlug: z.string().min(1), model: z.string().min(1), rootId: z.string().optional() });
 const command = z.object({ id: z.string().regex(/^[a-z][a-z0-9_-]*$/), executable: z.string().min(1), args: z.array(z.string()), timeoutMs: z.number().int().min(100).max(600000) });
-const workflowSchema = z.object({ schemaVersion: z.literal(1), id: z.string().min(1), name: z.string().min(1),
+const workflowSchema = z.object({ schemaVersion: z.literal(1), id: z.string().min(1), name: z.string().min(1), locale: z.enum(['zh-CN', 'en']).optional(),
   nodes: z.array(z.object({ id: z.string().regex(/^[a-z][a-z0-9_-]*$/), name: z.string().min(1), type: z.enum(['agent', 'clarify', 'review', 'verify', 'gate', 'human']), role: z.enum(['analyst', 'architect', 'developer', 'reviewer']).optional(), prompt: z.string(), inputs: z.array(z.string()), outputs: z.array(z.string().regex(/^[a-z][a-z0-9_-]*$/)), target: target.optional(), requireAcceptance: z.boolean().optional(), taskMode: z.boolean().optional(), maxSteps: z.number().int().min(1).max(100).optional(), timeoutMs: z.number().int().min(1000).max(900000).optional() })).min(1),
   roles: z.object({ analyst: target.optional(), architect: target.optional(), developer: target.optional(), reviewer: target.optional() }), requiredVerification: z.array(z.string()), requireReview: z.boolean(), requireClarification: z.boolean().optional() });
 const revisionBody = z.object({ expectedRevision: z.number().int().positive() });
@@ -22,6 +24,14 @@ const param = (request: any, name = 'id'): string => String(request.params[name]
 export async function createApp(service: EngineeringService, options: { staticRoot?: string; token?: string; desktopSecret?: string } = {}) {
   const app = Fastify({ logger: false, bodyLimit: 5 * 1024 * 1024 });
   const token = options.token || randomBytes(32).toString('hex');
+  app.addHook('onSend', async (request, reply, payload) => {
+    if (!request.url.startsWith('/api/') || typeof payload !== 'string' || !String(reply.getHeader('content-type') || '').startsWith('application/json')) return payload;
+    const locale = normalizeLocale(request.headers['accept-language']);
+    reply.header('Content-Language', locale).header('Vary', 'Accept-Language');
+    if (locale !== 'en') return payload;
+    try { return JSON.stringify(localizeApiResponse(request.url, reply.statusCode, JSON.parse(payload), locale)); }
+    catch { return payload; }
+  });
   if (options.desktopSecret) app.addHook('onSend', async (_request, reply, payload) => {
     if (!reply.hasHeader('Content-Security-Policy')) reply.header('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'");
     return payload;
@@ -74,13 +84,13 @@ export async function createApp(service: EngineeringService, options: { staticRo
     const body = z.object({ name: z.enum(['AGENT.md', 'AGENTS.md']), content: z.string().min(1), expectedHash: z.string().nullable() }).parse(request.body);
     return service.saveProjectGuidance(param(request), body.name, body.content, body.expectedHash);
   });
-  commandRoute('/api/projects', async request => { const body = z.object({ rootPath: z.string().min(1), name: z.string().optional() }).parse(request.body); return service.registerProject(body.rootPath, body.name); });
+  commandRoute('/api/projects', async request => { const body = z.object({ rootPath: z.string().min(1), name: z.string().optional() }).parse(request.body); return service.registerProject(body.rootPath, body.name, false, normalizeLocale(request.headers['accept-language'])); });
   commandRoute('/api/projects/:id/configure', async request => {
     const body = z.object({ expectedRevision: z.number().int().positive(), executionBackend: z.enum(backendIds).optional(), rules: z.string(), commands: z.array(command).min(1), defaults: z.object({ analyst: target.optional(), architect: target.optional(), developer: target.optional(), reviewer: target.optional() }) }).parse(request.body);
     const { expectedRevision, ...patch } = body;
     return service.configureProject(param(request), expectedRevision, patch);
   });
-  commandRoute('/api/work-items', async request => { const body = z.object({ projectId: z.string(), name: z.string().min(1), request: z.string().default(''), documents: z.array(requirementDocument).max(20).default([]), kind: z.enum(['feature', 'bug', 'refactor']).default('feature') }).parse(request.body); return service.createWorkItem(body.projectId, body.name, body.request, body.kind, body.documents); });
+  commandRoute('/api/work-items', async request => { const body = z.object({ projectId: z.string(), name: z.string().min(1), request: z.string().default(''), documents: z.array(requirementDocument).max(20).default([]), kind: z.enum(['feature', 'bug', 'refactor']).default('feature') }).parse(request.body); return service.createWorkItem(body.projectId, body.name, body.request, body.kind, body.documents, normalizeLocale(request.headers['accept-language'])); });
   app.get('/api/work-items/:id', request => {
     const query = z.object({ history: z.enum(['full', 'summary']).optional() }).parse(request.query);
     return service.snapshot(param(request), query);
@@ -127,13 +137,15 @@ export async function createApp(service: EngineeringService, options: { staticRo
   commandRoute('/api/attempts/:id/resume', request => service.resumeAttempt(param(request)));
   commandRoute('/api/interactions/:id/answer', request => { const body = z.object({ answer: z.unknown() }).parse(request.body); return service.answerInteraction(param(request), body.answer); });
   commandRoute('/api/artifacts/:id/revisions', request => { const body = z.object({ expectedRevision: z.number().int().positive(), content: z.string() }).parse(request.body); const a = service.store.get('artifacts', param(request)); const current = service.store.get('artifactRevisions', a.currentRevisionId); return service.artifacts.create(a.workItemId, a.logicalId, body.content, current.inputs, undefined, body.expectedRevision); });
-  app.get('/api/artifact-revisions/:id/reading', (request, reply) => reply.header('Cache-Control', 'no-store').send(service.artifacts.reading(param(request))));
+  app.get('/api/artifact-revisions/:id/reading', (request, reply) => reply.header('Cache-Control', 'no-store').send(service.artifacts.reading(param(request), normalizeLocale(request.headers['accept-language']))));
   app.get('/api/artifact-revisions/:id/reading.html', (request, reply) => {
+    const query = z.object({ locale: z.enum(['zh-CN', 'en']).optional() }).parse(request.query);
+    const locale = query.locale || normalizeLocale(request.headers['accept-language']);
     const revision = service.store.get('artifactRevisions', param(request)), artifact = service.store.get('artifacts', revision.artifactId);
-    reply.header('Cache-Control', 'no-store').header('X-Content-Type-Options', 'nosniff')
+    reply.header('Cache-Control', 'no-store').header('X-Content-Type-Options', 'nosniff').header('Content-Language', locale).header('Vary', 'Accept-Language')
       .header('Content-Disposition', `attachment; filename="${artifact.logicalId}.human.html"`)
       .header('Content-Security-Policy', "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'");
-    return reply.type('text/html; charset=utf-8').send(service.artifacts.readingHtml(revision.id));
+    return reply.type('text/html; charset=utf-8').send(service.artifacts.readingHtml(revision.id, locale));
   });
   app.get('/api/artifact-revisions/:id/source.md', (request, reply) => {
     const revision = service.store.get('artifactRevisions', param(request)), artifact = service.store.get('artifacts', revision.artifactId);

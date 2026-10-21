@@ -3,6 +3,7 @@ import { assert, type ClarificationSession } from '../domain/index.ts';
 import { Store } from './store.ts';
 import { guidanceFresh } from './guidance.ts';
 import { requirementFresh } from './requirements.ts';
+import type { Locale } from '../i18n/index.ts';
 
 export const clarificationOutput = z.object({
   status: z.enum(['needs_answers', 'complete']),
@@ -24,7 +25,11 @@ export function assertClarifiedSpec(store: Store, workItemId: string) {
 export function clarificationContext(session: ClarificationSession) {
   return `## 已记录的澄清问答\n${JSON.stringify(session.questions)}\n已使用 ${session.questions.length} / 5 个问题。不得重复已问的问题 ID。所有必要问题得到明确答复后，返回完整的修订规格。`;
 }
-export function appendClarificationRecord(content: string, session: ClarificationSession) {
+export function appendClarificationRecord(content: string, session: ClarificationSession, locale: Locale = 'zh-CN') {
+  if (locale === 'en') {
+    const records = session.questions.length ? session.questions.map(question => `- Question ${question.id}: ${question.question}\n  - Answer: ${question.answer}`).join('\n') : '- Functional boundaries, failure cases, data constraints, and acceptance criteria were checked. No additional questions were needed in this round.';
+    return `${content.trim()}\n\n## Clarification record\n\nSession: ${session.id}\n\n${records}\n`;
+  }
   const records = session.questions.length ? session.questions.map(q => `- 问题 ${q.id}：${q.question}\n  - 答复：${q.answer}`).join('\n') : '- 已检查规格中的功能边界、异常场景、数据约束与验收标准，本轮无需额外提问。';
   return `${content.trim()}\n\n## 澄清记录\n\n会话：${session.id}\n\n${records}\n`;
 }

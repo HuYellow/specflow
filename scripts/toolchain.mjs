@@ -38,6 +38,10 @@ try {
     await run(['scripts/desktop.mjs', ...process.argv.slice(3)]);
   } else if (command === 'desktop-smoke') {
     await run(['scripts/desktop-smoke.mjs', ...process.argv.slice(3)]);
+  } else if (command === 'localization-smoke') {
+    await run(['--import', 'tsx', 'scripts/localization-smoke.mjs', ...process.argv.slice(3)]);
+  } else if (command === 'localization-desktop-smoke') {
+    await run(['scripts/localization-desktop-smoke.mjs', ...process.argv.slice(3)]);
   } else if (command === 'installer-directory-smoke') {
     await run(['scripts/installer-directory-smoke.mjs', ...process.argv.slice(3)]);
   } else if (command === 'requirements-smoke') {

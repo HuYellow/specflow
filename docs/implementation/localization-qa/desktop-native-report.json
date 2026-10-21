@@ -1,0 +1,734 @@
+{
+  "platform": "win32",
+  "arch": "x64",
+  "executablePath": "C:\\Users\\huyel\\Documents\\Codex\\specflow\\node_modules\\electron\\dist\\electron.exe",
+  "testedAt": "2026-10-21T15:14:55.002Z",
+  "checks": [
+    "English saved preference initializes preload, renderer, first-run seed, workflow and native File/Edit/View/Help/update menus",
+    "UI language selection updates renderer and native menus immediately, persists zh-CN, and displays English-seeded default step labels in Chinese",
+    "UI selection persists English and normal application exit stops its backend",
+    "Same desktop profile restores English across a new backend port and retains its original seeded work item"
+  ],
+  "launches": [
+    {
+      "origin": "http://127.0.0.1:14015",
+      "desktop": {
+        "initialLocale": "en",
+        "readLocale": "en",
+        "documentLanguage": "en",
+        "require": "undefined",
+        "process": "undefined"
+      },
+      "profileIsIsolated": true
+    },
+    {
+      "origin": "http://127.0.0.1:10881",
+      "desktop": {
+        "initialLocale": "en",
+        "readLocale": "en",
+        "documentLanguage": "en",
+        "require": "undefined",
+        "process": "undefined"
+      },
+      "profileIsIsolated": true
+    }
+  ],
+  "screenshots": [
+    "C:\\Users\\huyel\\Documents\\Codex\\specflow\\.tools\\localization-qa\\desktop-native-english-first-launch.png",
+    "C:\\Users\\huyel\\Documents\\Codex\\specflow\\.tools\\localization-qa\\desktop-native-chinese-live-switch.png",
+    "C:\\Users\\huyel\\Documents\\Codex\\specflow\\.tools\\localization-qa\\desktop-native-english-live-switch.png",
+    "C:\\Users\\huyel\\Documents\\Codex\\specflow\\.tools\\localization-qa\\desktop-native-english-relaunch.png"
+  ],
+  "pageErrors": [],
+  "passed": true,
+  "seed": {
+    "projectName": "CSV import demo",
+    "itemName": "Add CSV import to an existing project",
+    "itemId": "be59bfb9-4e8a-4b45-9b19-29b5f9a00462",
+    "workflowName": "Spec-driven development",
+    "workflowLocale": "en",
+    "firstNodeName": "Requirements specification"
+  },
+  "initialMenus": [
+    {
+      "label": "File",
+      "role": null,
+      "enabled": true,
+      "type": "submenu",
+      "submenu": [
+        {
+          "label": "Open Data Directory",
+          "role": null,
+          "enabled": true,
+          "type": "normal"
+        },
+        {
+          "label": "Open Diagnostic Logs",
+          "role": null,
+          "enabled": true,
+          "type": "normal"
+        },
+        {
+          "label": "",
+          "role": null,
+          "enabled": true,
+          "type": "separator"
+        },
+        {
+          "label": "Quit SpecFlow",
+          "role": "quit",
+          "enabled": true,
+          "type": "normal"
+        }
+      ]
+    },
+    {
+      "label": "Edit",
+      "role": null,
+      "enabled": true,
+      "type": "submenu",
+      "submenu": [
+        {
+          "label": "Undo",
+          "role": "undo",
+          "enabled": true,
+          "type": "normal"
+        },
+        {
+          "label": "Redo",
+          "role": "redo",
+          "enabled": true,
+          "type": "normal"
+        },
+        {
+          "label": "",
+          "role": null,
+          "enabled": true,
+          "type": "separator"
+        },
+        {
+          "label": "Cut",
+          "role": "cut",
+          "enabled": true,
+          "type": "normal"
+        },
+        {
+          "label": "Copy",
+          "role": "copy",
+          "enabled": true,
+          "type": "normal"
+        },
+        {
+          "label": "Paste",
+          "role": "paste",
+          "enabled": true,
+          "type": "normal"
+        },
+        {
+          "label": "Select All",
+          "role": "selectall",
+          "enabled": true,
+          "type": "normal"
+        }
+      ]
+    },
+    {
+      "label": "View",
+      "role": null,
+      "enabled": true,
+      "type": "submenu",
+      "submenu": [
+        {
+          "label": "Reload",
+          "role": "reload",
+          "enabled": true,
+          "type": "normal"
+        },
+        {
+          "label": "Actual Size",
+          "role": "resetzoom",
+          "enabled": true,
+          "type": "normal"
+        },
+        {
+          "label": "Zoom In",
+          "role": "zoomin",
+          "enabled": true,
+          "type": "normal"
+        },
+        {
+          "label": "Zoom Out",
+          "role": "zoomout",
+          "enabled": true,
+          "type": "normal"
+        },
+        {
+          "label": "Toggle Full Screen",
+          "role": "togglefullscreen",
+          "enabled": true,
+          "type": "normal"
+        }
+      ]
+    },
+    {
+      "label": "Help",
+      "role": null,
+      "enabled": true,
+      "type": "submenu",
+      "submenu": [
+        {
+          "label": "Check for Updates…",
+          "id": "specflow-update-check",
+          "role": null,
+          "enabled": true,
+          "type": "normal"
+        },
+        {
+          "label": "Download Update…",
+          "id": "specflow-update-download",
+          "role": null,
+          "enabled": false,
+          "type": "normal"
+        },
+        {
+          "label": "Restart and Install Update…",
+          "id": "specflow-update-install",
+          "role": null,
+          "enabled": false,
+          "type": "normal"
+        },
+        {
+          "label": "Downloads and Release Notes",
+          "id": "specflow-update-releases",
+          "role": null,
+          "enabled": true,
+          "type": "normal"
+        },
+        {
+          "label": "",
+          "role": null,
+          "enabled": true,
+          "type": "separator"
+        },
+        {
+          "label": "About SpecFlow",
+          "role": null,
+          "enabled": true,
+          "type": "normal"
+        }
+      ]
+    }
+  ],
+  "chineseMenus": [
+    {
+      "label": "文件",
+      "role": null,
+      "enabled": true,
+      "type": "submenu",
+      "submenu": [
+        {
+          "label": "打开数据目录",
+          "role": null,
+          "enabled": true,
+          "type": "normal"
+        },
+        {
+          "label": "打开诊断日志",
+          "role": null,
+          "enabled": true,
+          "type": "normal"
+        },
+        {
+          "label": "",
+          "role": null,
+          "enabled": true,
+          "type": "separator"
+        },
+        {
+          "label": "退出 SpecFlow",
+          "role": "quit",
+          "enabled": true,
+          "type": "normal"
+        }
+      ]
+    },
+    {
+      "label": "编辑",
+      "role": null,
+      "enabled": true,
+      "type": "submenu",
+      "submenu": [
+        {
+          "label": "撤销",
+          "role": "undo",
+          "enabled": true,
+          "type": "normal"
+        },
+        {
+          "label": "重做",
+          "role": "redo",
+          "enabled": true,
+          "type": "normal"
+        },
+        {
+          "label": "",
+          "role": null,
+          "enabled": true,
+          "type": "separator"
+        },
+        {
+          "label": "剪切",
+          "role": "cut",
+          "enabled": true,
+          "type": "normal"
+        },
+        {
+          "label": "复制",
+          "role": "copy",
+          "enabled": true,
+          "type": "normal"
+        },
+        {
+          "label": "粘贴",
+          "role": "paste",
+          "enabled": true,
+          "type": "normal"
+        },
+        {
+          "label": "全选",
+          "role": "selectall",
+          "enabled": true,
+          "type": "normal"
+        }
+      ]
+    },
+    {
+      "label": "视图",
+      "role": null,
+      "enabled": true,
+      "type": "submenu",
+      "submenu": [
+        {
+          "label": "重新加载",
+          "role": "reload",
+          "enabled": true,
+          "type": "normal"
+        },
+        {
+          "label": "实际大小",
+          "role": "resetzoom",
+          "enabled": true,
+          "type": "normal"
+        },
+        {
+          "label": "放大",
+          "role": "zoomin",
+          "enabled": true,
+          "type": "normal"
+        },
+        {
+          "label": "缩小",
+          "role": "zoomout",
+          "enabled": true,
+          "type": "normal"
+        },
+        {
+          "label": "切换全屏",
+          "role": "togglefullscreen",
+          "enabled": true,
+          "type": "normal"
+        }
+      ]
+    },
+    {
+      "label": "帮助",
+      "role": null,
+      "enabled": true,
+      "type": "submenu",
+      "submenu": [
+        {
+          "label": "检查更新…",
+          "id": "specflow-update-check",
+          "role": null,
+          "enabled": true,
+          "type": "normal"
+        },
+        {
+          "label": "下载更新…",
+          "id": "specflow-update-download",
+          "role": null,
+          "enabled": false,
+          "type": "normal"
+        },
+        {
+          "label": "重启并安装更新…",
+          "id": "specflow-update-install",
+          "role": null,
+          "enabled": false,
+          "type": "normal"
+        },
+        {
+          "label": "下载与发行说明",
+          "id": "specflow-update-releases",
+          "role": null,
+          "enabled": true,
+          "type": "normal"
+        },
+        {
+          "label": "",
+          "role": null,
+          "enabled": true,
+          "type": "separator"
+        },
+        {
+          "label": "关于 SpecFlow",
+          "role": null,
+          "enabled": true,
+          "type": "normal"
+        }
+      ]
+    }
+  ],
+  "englishMenusAfterSwitch": [
+    {
+      "label": "File",
+      "role": null,
+      "enabled": true,
+      "type": "submenu",
+      "submenu": [
+        {
+          "label": "Open Data Directory",
+          "role": null,
+          "enabled": true,
+          "type": "normal"
+        },
+        {
+          "label": "Open Diagnostic Logs",
+          "role": null,
+          "enabled": true,
+          "type": "normal"
+        },
+        {
+          "label": "",
+          "role": null,
+          "enabled": true,
+          "type": "separator"
+        },
+        {
+          "label": "Quit SpecFlow",
+          "role": "quit",
+          "enabled": true,
+          "type": "normal"
+        }
+      ]
+    },
+    {
+      "label": "Edit",
+      "role": null,
+      "enabled": true,
+      "type": "submenu",
+      "submenu": [
+        {
+          "label": "Undo",
+          "role": "undo",
+          "enabled": true,
+          "type": "normal"
+        },
+        {
+          "label": "Redo",
+          "role": "redo",
+          "enabled": true,
+          "type": "normal"
+        },
+        {
+          "label": "",
+          "role": null,
+          "enabled": true,
+          "type": "separator"
+        },
+        {
+          "label": "Cut",
+          "role": "cut",
+          "enabled": true,
+          "type": "normal"
+        },
+        {
+          "label": "Copy",
+          "role": "copy",
+          "enabled": true,
+          "type": "normal"
+        },
+        {
+          "label": "Paste",
+          "role": "paste",
+          "enabled": true,
+          "type": "normal"
+        },
+        {
+          "label": "Select All",
+          "role": "selectall",
+          "enabled": true,
+          "type": "normal"
+        }
+      ]
+    },
+    {
+      "label": "View",
+      "role": null,
+      "enabled": true,
+      "type": "submenu",
+      "submenu": [
+        {
+          "label": "Reload",
+          "role": "reload",
+          "enabled": true,
+          "type": "normal"
+        },
+        {
+          "label": "Actual Size",
+          "role": "resetzoom",
+          "enabled": true,
+          "type": "normal"
+        },
+        {
+          "label": "Zoom In",
+          "role": "zoomin",
+          "enabled": true,
+          "type": "normal"
+        },
+        {
+          "label": "Zoom Out",
+          "role": "zoomout",
+          "enabled": true,
+          "type": "normal"
+        },
+        {
+          "label": "Toggle Full Screen",
+          "role": "togglefullscreen",
+          "enabled": true,
+          "type": "normal"
+        }
+      ]
+    },
+    {
+      "label": "Help",
+      "role": null,
+      "enabled": true,
+      "type": "submenu",
+      "submenu": [
+        {
+          "label": "Check for Updates…",
+          "id": "specflow-update-check",
+          "role": null,
+          "enabled": true,
+          "type": "normal"
+        },
+        {
+          "label": "Download Update…",
+          "id": "specflow-update-download",
+          "role": null,
+          "enabled": false,
+          "type": "normal"
+        },
+        {
+          "label": "Restart and Install Update…",
+          "id": "specflow-update-install",
+          "role": null,
+          "enabled": false,
+          "type": "normal"
+        },
+        {
+          "label": "Downloads and Release Notes",
+          "id": "specflow-update-releases",
+          "role": null,
+          "enabled": true,
+          "type": "normal"
+        },
+        {
+          "label": "",
+          "role": null,
+          "enabled": true,
+          "type": "separator"
+        },
+        {
+          "label": "About SpecFlow",
+          "role": null,
+          "enabled": true,
+          "type": "normal"
+        }
+      ]
+    }
+  ],
+  "desktopStderr": "Debugger ending on ws://127.0.0.1:14009/d79f7e65-3b9f-4736-9410-3bcfa38ed54c\r\nFor help, see: https://nodejs.org/learn/getting-started/debugging\r\nDebugger ending on ws://127.0.0.1:10877/d08eae72-6795-4f70-8ed3-1cbffcab1075\r\nFor help, see: https://nodejs.org/learn/getting-started/debugging\r\n",
+  "restartedMenus": [
+    {
+      "label": "File",
+      "role": null,
+      "enabled": true,
+      "type": "submenu",
+      "submenu": [
+        {
+          "label": "Open Data Directory",
+          "role": null,
+          "enabled": true,
+          "type": "normal"
+        },
+        {
+          "label": "Open Diagnostic Logs",
+          "role": null,
+          "enabled": true,
+          "type": "normal"
+        },
+        {
+          "label": "",
+          "role": null,
+          "enabled": true,
+          "type": "separator"
+        },
+        {
+          "label": "Quit SpecFlow",
+          "role": "quit",
+          "enabled": true,
+          "type": "normal"
+        }
+      ]
+    },
+    {
+      "label": "Edit",
+      "role": null,
+      "enabled": true,
+      "type": "submenu",
+      "submenu": [
+        {
+          "label": "Undo",
+          "role": "undo",
+          "enabled": true,
+          "type": "normal"
+        },
+        {
+          "label": "Redo",
+          "role": "redo",
+          "enabled": true,
+          "type": "normal"
+        },
+        {
+          "label": "",
+          "role": null,
+          "enabled": true,
+          "type": "separator"
+        },
+        {
+          "label": "Cut",
+          "role": "cut",
+          "enabled": true,
+          "type": "normal"
+        },
+        {
+          "label": "Copy",
+          "role": "copy",
+          "enabled": true,
+          "type": "normal"
+        },
+        {
+          "label": "Paste",
+          "role": "paste",
+          "enabled": true,
+          "type": "normal"
+        },
+        {
+          "label": "Select All",
+          "role": "selectall",
+          "enabled": true,
+          "type": "normal"
+        }
+      ]
+    },
+    {
+      "label": "View",
+      "role": null,
+      "enabled": true,
+      "type": "submenu",
+      "submenu": [
+        {
+          "label": "Reload",
+          "role": "reload",
+          "enabled": true,
+          "type": "normal"
+        },
+        {
+          "label": "Actual Size",
+          "role": "resetzoom",
+          "enabled": true,
+          "type": "normal"
+        },
+        {
+          "label": "Zoom In",
+          "role": "zoomin",
+          "enabled": true,
+          "type": "normal"
+        },
+        {
+          "label": "Zoom Out",
+          "role": "zoomout",
+          "enabled": true,
+          "type": "normal"
+        },
+        {
+          "label": "Toggle Full Screen",
+          "role": "togglefullscreen",
+          "enabled": true,
+          "type": "normal"
+        }
+      ]
+    },
+    {
+      "label": "Help",
+      "role": null,
+      "enabled": true,
+      "type": "submenu",
+      "submenu": [
+        {
+          "label": "Check for Updates…",
+          "id": "specflow-update-check",
+          "role": null,
+          "enabled": true,
+          "type": "normal"
+        },
+        {
+          "label": "Download Update…",
+          "id": "specflow-update-download",
+          "role": null,
+          "enabled": false,
+          "type": "normal"
+        },
+        {
+          "label": "Restart and Install Update…",
+          "id": "specflow-update-install",
+          "role": null,
+          "enabled": false,
+          "type": "normal"
+        },
+        {
+          "label": "Downloads and Release Notes",
+          "id": "specflow-update-releases",
+          "role": null,
+          "enabled": true,
+          "type": "normal"
+        },
+        {
+          "label": "",
+          "role": null,
+          "enabled": true,
+          "type": "separator"
+        },
+        {
+          "label": "About SpecFlow",
+          "role": null,
+          "enabled": true,
+          "type": "normal"
+        }
+      ]
+    }
+  ],
+  "temporaryProfileRemoved": true
+}

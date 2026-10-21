@@ -219,3 +219,17 @@ main { padding: 22px 30px 12px; max-width: 1760px; }
   .page-footer { font-size: 10px; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; } }
+/* Language selection stays available before a repository is opened. */
+.language-control{position:relative;flex-shrink:0}
+.language-switcher{display:flex;align-items:center;gap:6px;border:1px solid var(--line,#cfded1);border-radius:6px;padding:5px 7px;color:var(--ink,#23463b);font-size:12px;max-width:135px}
+.language-switcher select{border:0;background:transparent;color:inherit;font:inherit;max-width:100%;cursor:pointer;min-height:24px}
+.language-switcher:focus-within{outline:2px solid #2e8375;outline-offset:2px}
+.language-error{position:absolute;right:0;top:calc(100% + 8px);z-index:80;width:240px;padding:10px;background:#fff5ee;color:#923c28;border:1px solid #dfb3a3;border-radius:6px;font-size:12px;line-height:1.5}
+html:lang(en) .tabs{flex-wrap:wrap}
+html:lang(en) .tab-bar{align-items:center;gap:10px;flex-wrap:wrap}
+html:lang(en) .tabs>button{white-space:normal;line-height:1.4;min-height:44px}
+html:lang(en) .flow-step-name,html:lang(en) .flow-node-name{overflow-wrap:normal;word-break:normal}
+html:lang(en) .field,html:lang(en) .form-note,html:lang(en) .blocker-box,html:lang(en) .empty-state{overflow-wrap:break-word}
+html:lang(en) button{word-break:normal}
+html:lang(en) .run-actions,html:lang(en) .workitem-tools{flex-wrap:wrap}
+@media(max-width:650px){.language-switcher{padding:3px 5px;gap:3px;font-size:11px}.language-switcher>svg{display:none}html:lang(en) .topbar{gap:6px}html:lang(en) .top-actions{gap:5px}html:lang(en) .tabs{gap:2px}html:lang(en) .tabs>button{padding:9px 8px;font-size:11px}}

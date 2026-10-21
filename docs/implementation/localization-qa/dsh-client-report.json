@@ -1,0 +1,24 @@
+{
+  "passed": true,
+  "checks": [
+    "Published factory registers the real keyed tab and renders with shared React 18.",
+    "Read failures retain the last snapshot and disable dispatch until a successful refresh.",
+    "A forged option cannot construct a target; two synchronous clicks dispatch one catalog target.",
+    "A real SPECFLOW_FAILURE never retries and stays locked through polling, panel remount and page reload until explicit refresh.",
+    "Reading/source views render safely, follow the DSH theme and accept through the strict owner-controlled API.",
+    "Code acceptance requires loaded diff, a passed precheck and the explicit review checkbox.",
+    "Clarification options are editable and save through the versioned draft API.",
+    "Requirement edits keep uploaded, pasted and repository documents, preserve drafts through polling/tab switches and use frozen revision IDs with explicit conflict resolution.",
+    "Artifact editing freezes the artifact revision, retains text on 409 conflicts and saves a fresh unreviewed candidate without accepting or reusing approval of the old revision.",
+    "English/Chinese switching preserves unsaved document text, persists the selection, leaves the host document unchanged, and fits a 420px panel.",
+    "Hidden sessions stop polling; plugin unload removes tab, slot, stylesheet and all timers."
+  ],
+  "pageErrors": [],
+  "screenshots": [
+    "flow.png",
+    "documents.png",
+    "documents-dark.png",
+    "document-edit-conflict.png",
+    "document-edited-candidate.png"
+  ]
+}

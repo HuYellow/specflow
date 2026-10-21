@@ -33,6 +33,8 @@
     "desktop:package:mac:arm64": "node scripts/toolchain.mjs desktop package --mac --arm64",
     "desktop:package:mac:x64": "node scripts/toolchain.mjs desktop package --mac --x64",
     "desktop:smoke": "node scripts/toolchain.mjs desktop-smoke",
+    "smoke:localization": "node scripts/toolchain.mjs localization-smoke",
+    "desktop:smoke:localization": "node scripts/toolchain.mjs localization-desktop-smoke",
     "desktop:smoke:packaged": "node scripts/toolchain.mjs desktop-smoke --packaged",
     "desktop:smoke:installer-directory": "node scripts/toolchain.mjs installer-directory-smoke",
     "desktop:smoke:requirements": "node scripts/toolchain.mjs requirements-smoke",

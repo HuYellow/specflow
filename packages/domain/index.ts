@@ -1,3 +1,4 @@
+import { translate, type Locale } from '../i18n/index.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import type { ReviewContext, ReviewReport } from '../review-policy/index.ts';
 
@@ -20,7 +21,7 @@ export interface WorkItem extends Entity { projectId: string; name: string; requ
 export interface RequirementDocument { id: string; name: string; content: string; source: 'upload' | 'repository' | 'pasted'; repositoryPath?: string }
 export interface RequirementRevision extends Entity { workItemId: string; number: number; request: string; documents: RequirementDocument[]; contentHash: string }
 export interface WorkflowNode { id: string; name: string; type: NodeType; role?: Role; prompt: string; inputs: string[]; outputs: string[]; target?: ModelTarget; requireAcceptance?: boolean; taskMode?: boolean; maxSteps?: number; timeoutMs?: number }
-export interface WorkflowDefinition { schemaVersion: 1; id: string; name: string; nodes: WorkflowNode[]; roles: Partial<Record<Role, ModelTarget>>; requiredVerification: string[]; requireReview: boolean; requireClarification?: boolean }
+export interface WorkflowDefinition { locale?: Locale; schemaVersion: 1; id: string; name: string; nodes: WorkflowNode[]; roles: Partial<Record<Role, ModelTarget>>; requiredVerification: string[]; requireReview: boolean; requireClarification?: boolean }
 export interface Workflow extends Entity { workItemId: string; definition: WorkflowDefinition; definitionHash: string }
 export interface WorkflowRun extends Entity { workItemId: string; workflowId: string; definition: WorkflowDefinition; rules: string; rulesHash: string; state: 'active' | 'paused' | 'completed' | 'cancelled' }
 export interface InputBinding { logicalId: string; artifactRevisionId: string; contentHash: string }
@@ -50,7 +51,8 @@ export class DomainError extends Error {
   constructor(public code: string, message: string, public status = 409, public details?: unknown) { super(message); this.name = 'DomainError'; }
 }
 export function assert(condition: unknown, code: string, message: string, details?: unknown): asserts condition { if (!condition) throw new DomainError(code, message, 409, details); }
-export const defaultWorkflow = (): WorkflowDefinition => ({
+export const defaultWorkflow = (locale: Locale = 'zh-CN'): WorkflowDefinition => {
+  const definition: WorkflowDefinition = {
   schemaVersion: 1, id: 'spec-driven', name: '规格驱动开发', roles: {}, requiredVerification: ['test'], requireReview: true, requireClarification: true,
   nodes: [
     { id: 'specify', name: '需求规格', type: 'agent', role: 'analyst', prompt: '分析需求和仓库，产出具有验收标准的需求规格。存在未知信息时提出明确问题。', inputs: [], outputs: ['spec'], requireAcceptance: true },
@@ -67,7 +69,9 @@ export const defaultWorkflow = (): WorkflowDefinition => ({
     { id: 'review-converge', name: '收敛复核', type: 'review', role: 'reviewer', prompt: '复核对齐报告，确认没有遗漏需求和证据。', inputs: ['convergence'], outputs: [] },
     { id: 'accept', name: '接纳代码', type: 'human', prompt: '', inputs: ['implementation', 'convergence@accepted'], outputs: [] },
   ],
-});
+  };
+  return locale === 'en' ? { ...definition, locale, name: translate(definition.name, locale), nodes: definition.nodes.map(node => ({ ...node, name: translate(node.name, locale), prompt: translate(node.prompt, locale) })) } : definition;
+};
 
 // Accepted inputs are reference material, not additional subjects to certify.
 export function reviewSubjects(node: WorkflowNode) { return node.inputs.filter(input => !input.endsWith('@accepted')).map(input => input.split('@')[0]); }

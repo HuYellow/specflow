@@ -20,6 +20,8 @@ const arch = process.argv.includes('--arm64') ? 'arm64' : process.argv.includes(
 const sourceBinary = explicitExecutable || (packaged ? (process.platform === 'win32' ? join(root, 'release/win-unpacked/SpecFlow.exe') : join(root, `release/${arch === 'arm64' ? 'mac-arm64' : 'mac'}/SpecFlow.app/Contents/MacOS/SpecFlow`)) : require('electron'));
 let binary = sourceBinary;
 const userData = await mkdtemp(join(tmpdir(), 'specflow-desktop-test-'));
+// Keep this Chinese regression fixture independent of the host system language.
+await writeFile(join(userData, 'locale.json'), JSON.stringify({ locale: 'zh-CN' }));
 const env = { ...process.env, SPECFLOW_DESKTOP_USER_DATA: userData };
 delete env.SPECFLOW_DATA_DIR; delete env.SPECFLOW_MAKA_ROOT; delete env.ELECTRON_RUN_AS_NODE;
 delete env.NODE_OPTIONS; delete env.NODE_PATH;

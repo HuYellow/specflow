@@ -15,7 +15,8 @@ function assertPromptSize(prompt: string) {
 }
 type Host = { rootId: string; request(operation: string, input: unknown, timeout?: number): Promise<any>; status(): Promise<any>; openSessionSubscription(input: unknown): Promise<any>; close(): Promise<void> };
 export class MakaBackend implements ExecutionBackend {
-  toolInstructions(input: { readOnly: boolean; clarification: boolean }) {
+  toolInstructions(input: { readOnly: boolean; clarification: boolean; locale?: 'zh-CN' | 'en' }) {
+    if (input.locale === 'en') return `Use tool_search to activate SpecFlowRead and SpecFlowList to inspect actual source code. ${input.readOnly ? 'This stage is read-only. Do not use write or command tools.' : 'Use SpecFlowWrite to modify files. First obtain contentHash with SpecFlowRead, then pass it as expectedHash to SpecFlowWrite.'} These tools are restricted to the current workspace. Do not use the native Read, Write, or Bash workers, which are unavailable on Windows. ${input.clarification ? 'Submit requirements questions through the structured clarification field.' : 'When additional information is needed, activate SpecFlowQuestion through tool_search.'}`;
     return `通过 tool_search 激活 SpecFlowRead、SpecFlowList 查阅实际源码。${input.readOnly ? '本次只读，不使用写入或命令工具。' : '修改文件时使用 SpecFlowWrite；先用 SpecFlowRead 取得 contentHash，再以 expectedHash 传给 SpecFlowWrite。'}这些工具只允许当前工作空间，不要使用 Windows 上不可用的原生 Read、Write、Bash worker。${input.clarification ? '需求问题通过结构化 clarification 字段提交。' : '需要补充信息时通过 tool_search 激活 SpecFlowQuestion。'}`;
   }
   private connection?: Host;

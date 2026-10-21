@@ -43,7 +43,12 @@ export class DshBackend implements ExecutionBackend {
     if (!options.instanceId.trim()) throw new Error('DSH instanceId must identify the persistent host profile');
     this.rootId = `dsh-${hash(JSON.stringify([options.instanceId, resolve(options.stateDir), resolve(options.workspaceRoot)])).slice(0, 32)}`;
   }
-  toolInstructions(input: { readOnly: boolean; clarification: boolean }): string {
+  toolInstructions(input: { readOnly: boolean; clarification: boolean; locale?: 'zh-CN' | 'en' }): string {
+    if (input.locale === 'en') return [
+      'The execution backend is DeepSeek Harness. This session only provides Specflow workspace tools: specflow_list_files, specflow_read_file, and, for stages allowed to write, specflow_make_directory, specflow_write_file, and specflow_edit_file. Paths are relative to the current isolated workspace. Access to .git or external directories is prohibited.',
+      input.readOnly ? 'This stage only has read access. Do not modify files.' : 'Read a file before modifying it and use the returned SHA-256 as expected_hash. For new files, expected_hash is an empty string. Specflow runs command verification in the verification stage; shell tools and subagents are prohibited.',
+      input.clarification ? 'Place questions requiring clarification in clarification.questions in the final JSON.' : 'The final output must be the complete JSON required by the stage.',
+    ].join('\n');
     return [
       '执行底座为 DeepSeek Harness。当前会话仅提供 Specflow 工作区工具：specflow_list_files、specflow_read_file，以及写入阶段的 specflow_make_directory、specflow_write_file、specflow_edit_file。路径相对当前隔离工作区，不允许访问 .git 或外部目录。',
       input.readOnly ? '本阶段只有读取能力，禁止修改文件。' : '修改文件时先读取并用返回的 SHA-256 作为 expected_hash；新文件 expected_hash 为空字符串。命令验证由 Specflow 的验证阶段运行，不能用 shell 或子代理。',

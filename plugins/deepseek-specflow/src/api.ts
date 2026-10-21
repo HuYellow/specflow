@@ -4,13 +4,16 @@ import type { EngineeringService } from '../../../packages/specflow-core/index.t
 import { clientRequestSchema, type ConnectionFetchRoute } from '@deepseek-ai/dsh-client-connection';
 import { commandOperations, COMMAND_ENDPOINT, PLUGIN_VERSION, READ_ENDPOINT, readResources } from './protocol.ts';
 import type { SpecflowBootstrap } from './protocol.ts';
+import { normalizeLocale, translate, type Locale } from '../../../packages/i18n/index.ts';
+import { localizeApiResponse } from '../../../apps/server/src/localization.ts';
 
 const entityId = z.string().min(1).max(256);
 const revision = z.number().int().positive();
 const target = z.object({ backend: z.literal('dsh'), connectionId: entityId, connectionSlug: entityId, model: entityId, rootId: entityId.optional() }).strict();
 const document = z.object({ id: entityId, name: z.string().min(1).max(200), content: z.string().min(1).max(2_000_000), source: z.enum(['upload', 'repository', 'pasted']), repositoryPath: z.string().max(1000).optional() }).strict();
-const readRequest = z.object({ resource: z.enum(readResources), id: entityId.optional(), after: z.number().int().nonnegative().safe().optional() }).strict();
-const commandRequest = z.object({ operation: z.enum(commandOperations), id: entityId.optional(), input: z.unknown().optional(), idempotencyKey: z.string().min(1).max(128) }).strict();
+const localeField = z.enum(['zh-CN', 'en']).optional();
+const readRequest = z.object({ resource: z.enum(readResources), id: entityId.optional(), after: z.number().int().nonnegative().safe().optional(), locale: localeField }).strict();
+const commandRequest = z.object({ operation: z.enum(commandOperations), id: entityId.optional(), input: z.unknown().optional(), idempotencyKey: z.string().min(1).max(128), locale: localeField }).strict();
 const inputRevision = z.object({ expectedRevision: revision }).strict();
 const empty = z.object({}).strict();
 
@@ -34,21 +37,23 @@ export class SpecflowApi {
     return request;
   }
 
-  read(raw: unknown): Promise<unknown> {
+  read(raw: unknown, fallbackLocale: Locale = 'zh-CN'): Promise<unknown> {
     return this.track(async () => {
       const request = readRequest.parse(raw);
+      const locale = request.locale || fallbackLocale;
+      const localize = (path: string, value: unknown) => localizeApiResponse(path, 200, value, locale);
       const id = () => entityId.parse(request.id);
       switch (request.resource) {
-        case 'bootstrap': return { version: PLUGIN_VERSION, canWrite: true, projects: this.service.store.list('projects'), workItems: this.service.store.list('workItems'), catalog: await this.service.backendCatalog() } satisfies SpecflowBootstrap;
-        case 'snapshot': return this.service.snapshot(id());
-        case 'artifact': return this.service.artifacts.reading(id());
-        case 'readiness': return this.service.readiness(id());
-        case 'attempt': return this.service.attemptDetail(id());
+        case 'bootstrap': return { version: PLUGIN_VERSION, canWrite: true, projects: this.service.store.list('projects'), workItems: this.service.store.list('workItems'), catalog: localize('/api/backend/targets', await this.service.backendCatalog()) as SpecflowBootstrap['catalog'] } satisfies SpecflowBootstrap;
+        case 'snapshot': return localize(`/api/work-items/${id()}`, await this.service.snapshot(id()));
+        case 'artifact': return this.service.artifacts.reading(id(), locale);
+        case 'readiness': return localize(`/api/node-runs/${id()}/readiness`, await this.service.readiness(id()));
+        case 'attempt': return localize(`/api/attempts/${id()}`, this.service.attemptDetail(id()));
         case 'candidateDiff': {
           const candidate = this.service.store.get('candidates', id());
           return { candidate, diff: await this.service.workspaces.diff(candidate.workspace, candidate.baseCommit) };
         }
-        case 'acceptancePrecheck': return this.service.acceptancePrecheck(id());
+        case 'acceptancePrecheck': return localize(`/api/code-candidates/${id()}/acceptance-precheck`, await this.service.acceptancePrecheck(id()));
         case 'events': {
           const after = request.after ?? 0;
           const cursor = this.service.store.eventCursor(after);
@@ -59,7 +64,7 @@ export class SpecflowApi {
     });
   }
 
-  command(raw: unknown): Promise<unknown> {
+  command(raw: unknown, fallbackLocale: Locale = 'zh-CN'): Promise<unknown> {
     return this.track(async () => {
       const request = commandRequest.parse(raw);
       const signature = `${request.operation}:${request.id ?? ''}:${hash(JSON.stringify(request.input ?? {}))}`;
@@ -68,19 +73,19 @@ export class SpecflowApi {
       if (this.inFlight.has(request.idempotencyKey)) throw new DomainError('REQUEST_IN_PROGRESS', '相同命令正在执行');
       this.inFlight.add(request.idempotencyKey);
       try {
-        const result = await this.execute(request.operation, request.id, request.input ?? {});
+        const result = await this.execute(request.operation, request.id, request.input ?? {}, request.locale || fallbackLocale);
         this.service.store.saveReceipt(request.idempotencyKey, signature, result ?? {});
         return result ?? {};
       } finally { this.inFlight.delete(request.idempotencyKey); }
     });
   }
 
-  private async execute(operation: typeof commandOperations[number], rawId: string | undefined, input: unknown): Promise<unknown> {
+  private async execute(operation: typeof commandOperations[number], rawId: string | undefined, input: unknown, locale: Locale): Promise<unknown> {
     const id = () => entityId.parse(rawId);
     switch (operation) {
       case 'registerProject': {
         const body = z.object({ rootPath: z.string().min(1).max(4000), name: z.string().min(1).max(200).optional() }).strict().parse(input);
-        return this.service.registerProject(body.rootPath, body.name);
+        return this.service.registerProject(body.rootPath, body.name, false, locale);
       }
       case 'configureProject': {
         const body = z.object({ expectedRevision: revision, executionBackend: z.literal('dsh').optional(), rules: z.string().max(100_000), commands: z.array(z.object({ id: z.string().regex(/^[a-z][a-z0-9_-]*$/), executable: z.string().min(1).max(4000), args: z.array(z.string().max(4000)).max(100), timeoutMs: z.number().int().min(100).max(600_000) }).strict()).min(1).max(20), defaults: z.object({ analyst: target.optional(), architect: target.optional(), developer: target.optional(), reviewer: target.optional() }).strict() }).strict().parse(input);
@@ -89,7 +94,7 @@ export class SpecflowApi {
       }
       case 'createWorkItem': {
         const body = z.object({ projectId: entityId, name: z.string().min(1).max(200), request: z.string().max(2_000_000).default(''), kind: z.enum(['feature', 'bug', 'refactor']).default('feature'), documents: z.array(document).max(20).default([]) }).strict().parse(input);
-        return this.service.createWorkItem(body.projectId, body.name, body.request, body.kind, body.documents);
+        return this.service.createWorkItem(body.projectId, body.name, body.request, body.kind, body.documents, locale);
       }
       case 'saveRequirements': {
         const body = z.object({ expectedRevisionId: entityId, request: z.string().max(2_000_000), documents: z.array(document).max(20) }).strict().parse(input);
@@ -146,10 +151,13 @@ export class SpecflowApi {
   }
 }
 
-export function failureOf(error: unknown): { code: string; message: string; details: object } {
-  if (error instanceof DomainError) return { code: error.code, message: error.message, details: { status: error.status, ...(error.details === undefined ? {} : { cause: error.details }) } };
-  if (error instanceof z.ZodError) return { code: 'INVALID_REQUEST', message: '请求字段不符合 Specflow 契约', details: { issues: error.issues } };
-  return { code: 'SPECFLOW_FAILURE', message: error instanceof Error ? error.message : 'Specflow 操作失败', details: {} };
+export function failureOf(error: unknown, locale: Locale = 'zh-CN'): { code: string; message: string; details: object } {
+  if (error instanceof DomainError) {
+    const translated = localizeApiResponse('/api/plugin', error.status, { code: error.code, message: error.message, details: error.details }, locale) as { message: string; details: unknown };
+    return { code: error.code, message: translated.message, details: { status: error.status, ...(error.details === undefined ? {} : { cause: translated.details }) } };
+  }
+  if (error instanceof z.ZodError) return { code: 'INVALID_REQUEST', message: translate('请求字段不符合 Specflow 契约', locale), details: { issues: error.issues } };
+  return { code: 'SPECFLOW_FAILURE', message: translate(error instanceof Error ? error.message : 'Specflow 操作失败', locale), details: {} };
 }
 
 /** Exact shared Fetch routes are authenticated by Connection on HTTP and IPC;
@@ -160,17 +168,21 @@ export function createSpecflowFetchRoute(api: SpecflowApi, endpoint: typeof READ
   return {
     path: `/api/${endpoint}`, methods: ['POST'], requestBody: 'buffered',
     async fetch(request) {
+      let locale = normalizeLocale(request.headers.get('accept-language'));
+      const response = (value: unknown, status = 200) => Response.json(value, { status, headers: { 'Content-Language': locale, Vary: 'Accept-Language' } });
       let raw: unknown;
-      try { raw = await request.json(); } catch { return Response.json({ code: 'INVALID_REQUEST', message: '请求必须为 JSON' }, { status: 400 }); }
+      try { raw = await request.json(); } catch { return response({ code: 'INVALID_REQUEST', message: translate('请求必须为 JSON', locale) }, 400); }
       const parsed = clientRequestSchema.safeParse(raw);
-      if (!parsed.success) return Response.json({ code: 'INVALID_REQUEST', message: 'Connection RPC envelope 无效' }, { status: 400 });
+      if (!parsed.success) return response({ code: 'INVALID_REQUEST', message: translate('Connection RPC envelope 无效', locale) }, 400);
       const message = parsed.data;
-      const fail = (error: unknown) => Response.json({ type: 'server-response', rpcId: message.rpcId, result: { ok: false, error: failureOf(error) } });
+      const explicit = message.payload && typeof message.payload === 'object' && 'locale' in message.payload ? message.payload.locale : undefined;
+      if (explicit === 'en' || explicit === 'zh-CN') locale = explicit;
+      const fail = (error: unknown) => response({ type: 'server-response', rpcId: message.rpcId, result: { ok: false, error: failureOf(error, locale) } });
       if (message.method !== endpoint) return fail(new DomainError('INVALID_REQUEST', 'RPC endpoint 与 method 不一致', 400));
       if (request.signal.aborted) return fail(new DomainError('REQUEST_CANCELLED', '请求已取消', 400));
       try {
-        const value = endpoint === READ_ENDPOINT ? await api.read(message.payload) : await api.command(message.payload);
-        return Response.json({ type: 'server-response', rpcId: message.rpcId, result: { ok: true, value } });
+        const value = endpoint === READ_ENDPOINT ? await api.read(message.payload, locale) : await api.command(message.payload, locale);
+        return response({ type: 'server-response', rpcId: message.rpcId, result: { ok: true, value } });
       } catch (error) { return fail(error); }
     },
   };

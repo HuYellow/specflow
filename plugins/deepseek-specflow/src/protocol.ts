@@ -1,6 +1,7 @@
 import type { Project, WorkItem } from '../../../packages/domain/index.ts';
 import type { EngineeringService } from '../../../packages/specflow-core/index.ts';
 import pluginManifest from '../package.json' with { type: 'json' };
+import type { Locale } from '../../../packages/i18n/index.ts';
 
 /** Connection's authenticated, carrier-neutral shared API channel. */
 export const RPC_CHANNEL = '/api';
@@ -11,6 +12,7 @@ export const PLUGIN_VERSION = pluginManifest.version;
 export const readResources = ['bootstrap', 'snapshot', 'artifact', 'readiness', 'attempt', 'candidateDiff', 'acceptancePrecheck', 'events'] as const;
 export type ReadResource = typeof readResources[number];
 export interface SpecflowReadRequest {
+  locale?: Locale;
   resource: ReadResource;
   id?: string;
   after?: number;
@@ -18,6 +20,7 @@ export interface SpecflowReadRequest {
 export const commandOperations = ['registerProject', 'configureProject', 'createWorkItem', 'saveRequirements', 'createRun', 'startNode', 'stopAttempt', 'reconcileAttempt', 'resumeAttempt', 'answerInteraction', 'answerClarification', 'saveClarificationDraft', 'restartClarification', 'editArtifact', 'acceptArtifact', 'verifyCandidate', 'acceptCode', 'resolveFinding'] as const;
 export type CommandOperation = typeof commandOperations[number];
 export interface SpecflowCommandRequest {
+  locale?: Locale;
   operation: CommandOperation;
   id?: string;
   input?: unknown;

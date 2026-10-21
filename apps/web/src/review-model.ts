@@ -1,3 +1,4 @@
+import { t } from './i18n.ts';
 export type ReviewLine = { kind: 'context' | 'added' | 'removed' | 'note'; text: string; oldLine?: number; newLine?: number };
 export type ReviewHunk = { header: string; oldStart: number; newStart: number; lines: ReviewLine[] };
 export type ReviewFile = { path: string; previousPath?: string; status: string; binary: boolean; hunks: ReviewHunk[]; metadata: string[] };
@@ -6,12 +7,12 @@ export type ReviewFile = { path: string; previousPath?: string; status: string; 
 export function parseUnifiedDiff(patch: string): ReviewFile[] {
   const files: ReviewFile[] = [];
   let file: ReviewFile | undefined, hunk: ReviewHunk | undefined, oldLine = 0, newLine = 0;
-  const ensureFile = () => file || (file = { path: '补丁', status: 'modified', binary: false, hunks: [], metadata: [] }, files.push(file), file);
+  const ensureFile = () => file || (file = { path: t('补丁'), status: 'modified', binary: false, hunks: [], metadata: [] }, files.push(file), file);
   for (const line of patch.replace(/\r\n/g, '\n').split('\n')) {
     if (line.startsWith('diff --git ')) {
       const paths = line.slice(11).match(/"(?:\\.|[^"])*"|\S+/g) || [];
       const decode = (value: string) => { try { return value.startsWith('"') ? JSON.parse(value) as string : value; } catch { return value; } };
-      file = { path: decode(paths[1] || paths[0] || '补丁').replace(/^b\//, ''), previousPath: decode(paths[0] || '').replace(/^a\//, ''), status: 'modified', binary: false, hunks: [], metadata: [] };
+      file = { path: decode(paths[1] || paths[0] || t('补丁')).replace(/^b\//, ''), previousPath: decode(paths[0] || '').replace(/^a\//, ''), status: 'modified', binary: false, hunks: [], metadata: [] };
       files.push(file); hunk = undefined; continue;
     }
     const match = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/.exec(line);

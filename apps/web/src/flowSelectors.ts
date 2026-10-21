@@ -1,3 +1,4 @@
+import { t } from './i18n.ts';
 import type { NodeRun, WorkflowNode, WorkflowRun } from '../../../packages/domain/index.ts';
 
 export type StepFact = { label: string; value: string; raw: string; tone: 'neutral' | 'success' | 'warning' | 'danger' };
@@ -17,10 +18,10 @@ export function requiresHumanAcceptance(definition?: Pick<WorkflowNode, 'require
 export function getStepStatus(node: NodeRun, definition?: WorkflowNode): StepStatusViewModel {
   const human = requiresHumanAcceptance(definition || node);
   return {
-    execution: { label: '执行', value: executionLabels[node.execution], raw: node.execution, tone: node.execution === 'failed' ? 'danger' : ['waiting_interaction', 'reconciling'].includes(node.execution) ? 'warning' : 'neutral' },
-    gate: { label: '门禁', value: gateLabels[node.gate], raw: node.gate, tone: node.gate === 'passed' ? 'success' : node.gate === 'blocked' ? 'danger' : node.gate === 'stale' ? 'warning' : 'neutral' },
-    freshness: { label: '新鲜度', value: node.freshness === 'fresh' ? '当前有效' : '上游已变更', raw: node.freshness, tone: node.freshness === 'fresh' ? 'neutral' : 'warning' },
-    acceptance: { label: '接纳', value: human ? node.acceptance === 'accepted' ? '人工已接纳' : '待人工接纳' : node.acceptance === 'accepted' ? '系统已确认' : '无独立接纳动作', raw: node.acceptance, tone: human && node.acceptance !== 'accepted' ? 'warning' : node.acceptance === 'accepted' ? 'success' : 'neutral' },
+    execution: { label: t('执行'), value: t(executionLabels[node.execution]), raw: node.execution, tone: node.execution === 'failed' ? 'danger' : ['waiting_interaction', 'reconciling'].includes(node.execution) ? 'warning' : 'neutral' },
+    gate: { label: t('门禁'), value: t(gateLabels[node.gate]), raw: node.gate, tone: node.gate === 'passed' ? 'success' : node.gate === 'blocked' ? 'danger' : node.gate === 'stale' ? 'warning' : 'neutral' },
+    freshness: { label: t('新鲜度'), value: node.freshness === 'fresh' ? t('当前有效') : t('上游已变更'), raw: node.freshness, tone: node.freshness === 'fresh' ? 'neutral' : 'warning' },
+    acceptance: { label: t('接纳'), value: human ? node.acceptance === 'accepted' ? t('人工已接纳') : t('待人工接纳') : node.acceptance === 'accepted' ? t('系统已确认') : t('无独立接纳动作'), raw: node.acceptance, tone: human && node.acceptance !== 'accepted' ? 'warning' : node.acceptance === 'accepted' ? 'success' : 'neutral' },
     effectivelyPassed: node.execution === 'completed' && node.gate === 'passed' && node.freshness === 'fresh' && (!human || node.acceptance === 'accepted'),
   };
 }
@@ -91,7 +92,7 @@ export function getNodeDispatchScopes(node?: Pick<NodeRun, 'id' | 'type' | 'curr
 /** Local drafts restrict dispatch, never rewrite gate, acceptance or freshness. */
 export function dispatchBlockers(readiness: ReadinessState, clientBlockers: string[]) {
   return [...new Set([
-    ...(readiness.state === 'loading' ? ['正在检查运行条件'] : readiness.state === 'error' ? [`无法检查运行条件：${readiness.message}`] : readiness.state === 'blocked' ? readiness.reasons.length ? readiness.reasons : ['服务端条件尚未满足'] : []),
+    ...(readiness.state === 'loading' ? [t('正在检查运行条件')] : readiness.state === 'error' ? [t("无法检查运行条件：{message}", { message: readiness.message })] : readiness.state === 'blocked' ? readiness.reasons.length ? readiness.reasons : [t('服务端条件尚未满足')] : []),
     ...clientBlockers,
   ])];
 }
@@ -104,10 +105,10 @@ export function getConditionReasons(readiness: ReadinessState, clientBlockers: s
     if (existing) { if (!existing.sources.includes(source)) existing.sources.push(source); }
     else reasons.set(key, { reason, sources: [source] });
   };
-  dispatchBlockers(readiness, []).forEach(reason => add(reason, '服务端运行检查'));
-  nodeBlockers.forEach(reason => add(reason, '步骤记录'));
-  clientBlockers.forEach(reason => add(reason, '客户端检查'));
-  return [...reasons.values()];
+  dispatchBlockers(readiness, []).forEach(reason => add(reason, t('服务端运行检查')));
+  nodeBlockers.forEach(reason => add(reason, t('步骤记录')));
+  clientBlockers.forEach(reason => add(reason, t('客户端检查')));
+  return [...reasons.values()].map(value => ({ ...value, reason: t(value.reason) }));
 }
 
 /** The center retains 560px even when the inspector is expanded or dragged wider. */
@@ -128,20 +129,20 @@ export function getNextAction(input: {
 }): NextAction {
   const { node, readiness, waiting, reviewable } = input;
   let result: NextAction = {
-    kind: 'dispatch', label: node?.type === 'human' ? '接纳候选代码' : node?.freshness === 'stale' ? '基于当前依据重新运行' : node?.execution === 'completed' ? '创建新尝试' : '运行此步骤', disabled: !input.dispatchEnabled,
-    summary: readiness.state === 'ready' ? input.clientBlocked ? '服务端条件满足，本地输入尚需处理。' : '运行条件已满足，可基于已保存的材料开始。' : readiness.state === 'error' ? '无法检查运行条件，请重试检查。' : readiness.state === 'loading' ? '正在检查运行条件…' : '当前步骤还缺少运行条件。',
+    kind: 'dispatch', label: node?.type === 'human' ? t('接纳候选代码') : node?.freshness === 'stale' ? t('基于当前依据重新运行') : node?.execution === 'completed' ? t('创建新尝试') : t('运行此步骤'), disabled: !input.dispatchEnabled,
+    summary: readiness.state === 'ready' ? input.clientBlocked ? t('服务端条件满足，本地输入尚需处理。') : t('运行条件已满足，可基于已保存的材料开始。') : readiness.state === 'error' ? t('无法检查运行条件，请重试检查。') : readiness.state === 'loading' ? t('正在检查运行条件…') : t('当前步骤还缺少运行条件。'),
   };
-  if (input.accepted) result = { kind: 'evidence', label: '查看交付证据', summary: '此工作项已交付。步骤百分比与交付状态分别记录。', disabled: false };
-  else if (waiting) result = { kind: 'attention', label: waiting.kind === 'clarification' ? '回答需求澄清' : '处理问题或授权', summary: `${waiting.title}${input.pendingCount > 1 ? ` · 还有 ${input.pendingCount - 1} 项待处理` : ''}`, disabled: false, attentionId: waiting.id };
-  else if (node && ['starting', 'running', 'waiting_interaction', 'reconciling'].includes(node.execution)) result = { kind: 'run', label: node.execution === 'reconciling' ? '核对原执行' : '查看本次执行', summary: node.execution === 'reconciling' ? '原执行状态待核对，请先确认原执行身份与状态。' : node.execution === 'waiting_interaction' ? '正在等待交互状态同步，可查看原执行。' : '本次执行正在进行，运行详情保留原执行身份与可用控制。', disabled: false };
-  else if (node && ['failed', 'cancelled'].includes(node.execution)) result = { kind: 'run', label: node.execution === 'failed' ? '查看失败与恢复入口' : '查看已停止的执行', summary: node.error || '先检查原执行结果，再决定恢复或创建新尝试。', disabled: false };
-  else if (reviewable) result = { kind: 'attention', label: '审阅并接纳已复核产物', summary: `${reviewable.title} · 先检查复核证据和接纳条件。`, disabled: false, attentionId: reviewable.id };
-  else if (node?.execution === 'completed' && node.freshness !== 'stale' && input.hasOutput) result = { kind: 'artifact', label: '阅读产物与接纳条件', summary: '执行已结束，工程状态请分别查看门禁、接纳与新鲜度。', disabled: false };
-  else if (node?.execution === 'completed' && node.freshness !== 'stale' && input.hasAttempt) result = { kind: 'run', label: '查看结果与证据', summary: '执行已结束；查看完整结果及其冻结依据。', disabled: false };
-  else if (input.runState !== 'active') result = { kind: 'blocked', label: input.runState === 'paused' ? '流程已暂停' : '此流程暂不启动新步骤', summary: '当前流程不会启动新步骤，已有执行仍可查看和核对。', disabled: true };
-  else if (readiness.state === 'error') result = { kind: 'retry', label: '重试运行条件检查', summary: result.summary, disabled: false };
-  else if (input.unsavedRequirements) result = { kind: 'requirements', label: '处理需求草稿', summary: result.summary, disabled: false };
-  if (!input.accepted && node?.freshness === 'stale') result.summary += ' 此步骤使用的上游依据已变更，需要重新核实。';
-  if (input.runState === 'paused' && node && ['starting', 'running', 'waiting_interaction', 'reconciling'].includes(node.execution)) result.summary += ' 流程已暂停后续派发，当前执行未因此暂停。';
+  if (input.accepted) result = { kind: 'evidence', label: t('查看交付证据'), summary: t('此工作项已交付。步骤百分比与交付状态分别记录。'), disabled: false };
+  else if (waiting) result = { kind: 'attention', label: waiting.kind === 'clarification' ? t('回答需求澄清') : t('处理问题或授权'), summary: `${waiting.title}${input.pendingCount > 1 ? t(" · 还有 {value1} 项待处理", { value1: input.pendingCount - 1 }) : ''}`, disabled: false, attentionId: waiting.id };
+  else if (node && ['starting', 'running', 'waiting_interaction', 'reconciling'].includes(node.execution)) result = { kind: 'run', label: node.execution === 'reconciling' ? t('核对原执行') : t('查看本次执行'), summary: node.execution === 'reconciling' ? t('原执行状态待核对，请先确认原执行身份与状态。') : node.execution === 'waiting_interaction' ? t('正在等待交互状态同步，可查看原执行。') : t('本次执行正在进行，运行详情保留原执行身份与可用控制。'), disabled: false };
+  else if (node && ['failed', 'cancelled'].includes(node.execution)) result = { kind: 'run', label: node.execution === 'failed' ? t('查看失败与恢复入口') : t('查看已停止的执行'), summary: node.error ? t(node.error) : t('先检查原执行结果，再决定恢复或创建新尝试。'), disabled: false };
+  else if (reviewable) result = { kind: 'attention', label: t('审阅并接纳已复核产物'), summary: t("{title} · 先检查复核证据和接纳条件。", { title: reviewable.title }), disabled: false, attentionId: reviewable.id };
+  else if (node?.execution === 'completed' && node.freshness !== 'stale' && input.hasOutput) result = { kind: 'artifact', label: t('阅读产物与接纳条件'), summary: t('执行已结束，工程状态请分别查看门禁、接纳与新鲜度。'), disabled: false };
+  else if (node?.execution === 'completed' && node.freshness !== 'stale' && input.hasAttempt) result = { kind: 'run', label: t('查看结果与证据'), summary: t('执行已结束；查看完整结果及其冻结依据。'), disabled: false };
+  else if (input.runState !== 'active') result = { kind: 'blocked', label: input.runState === 'paused' ? t('流程已暂停') : t('此流程暂不启动新步骤'), summary: t('当前流程不会启动新步骤，已有执行仍可查看和核对。'), disabled: true };
+  else if (readiness.state === 'error') result = { kind: 'retry', label: t('重试运行条件检查'), summary: result.summary, disabled: false };
+  else if (input.unsavedRequirements) result = { kind: 'requirements', label: t('处理需求草稿'), summary: result.summary, disabled: false };
+  if (!input.accepted && node?.freshness === 'stale') result.summary += t(' 此步骤使用的上游依据已变更，需要重新核实。');
+  if (input.runState === 'paused' && node && ['starting', 'running', 'waiting_interaction', 'reconciling'].includes(node.execution)) result.summary += t(' 流程已暂停后续派发，当前执行未因此暂停。');
   return result;
 }

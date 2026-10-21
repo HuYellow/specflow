@@ -1,0 +1,12 @@
+{
+  "passed": true,
+  "checks": [
+    "System English default",
+    "English and Chinese switching persisted",
+    "Host title and lang preserved",
+    "Authored Chinese content unchanged",
+    "Unsaved document draft retained on language switch",
+    "Narrow sidebar has no horizontal overflow"
+  ],
+  "pageErrors": []
+}
