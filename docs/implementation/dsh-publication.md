@@ -5,9 +5,9 @@ Specflow 的插件独立于桌面安装包公开分发。当前版本为 `dsh-pl
 
 ## 用户安装入口
 
-- Release：https://github.com/HuYellow/specflow/releases/tag/dsh-plugin-specflow%400.1.0
-- 预构建包：https://github.com/HuYellow/specflow/releases/download/dsh-plugin-specflow%400.1.0/dsh-plugin-specflow-0.1.0.tgz
-- DSH 市场索引：https://raw.githubusercontent.com/HuYellow/specflow/main/market/dsh/index.json
+- [插件 Release](https://github.com/HuYellow/specflow/releases/tag/dsh-plugin-specflow%400.1.0)
+- [预构建安装包](https://github.com/HuYellow/specflow/releases/download/dsh-plugin-specflow%400.1.0/dsh-plugin-specflow-0.1.0.tgz)
+- [DSH 市场索引](https://raw.githubusercontent.com/HuYellow/specflow/main/market/dsh/index.json)
 
 在 DSH 插件页启用实验性的自定义插件市场，在“发现”中添加上述索引 URL。
 索引由 Specflow 项目维护，使用 DSH 官方 format 1，并明确版本和兼容范围。
@@ -82,6 +82,21 @@ node scripts/dsh-host-smoke.mjs --source <Release地址或索引中的固定Git�
 
 提交资料明确披露 Windows、指定 DSH 版本、本地模拟模型与浏览器验收的范围。
 社区是否合并或收录由维护者决定，公开提交不代表审核通过。
+
+## 0.1.0 公开发布记录
+
+2026-10-21 已完成公开分发：
+
+- Release 与两个资产（`.tgz`、`SHA256SUMS.txt`）已公开，插件包 SHA-256 为
+  `83821f9932f57d7dacf42c9594fc9e57d1b215c4aa3a35c1e9075c063ee92088`。
+- 分发提交为 `4c6e4f2cdd65054bfc0c607a921cb41a00886659`，标签为
+  `dsh-plugin-specflow@0.1.0`，目录为 `plugins/deepseek-specflow`。
+- 公开索引直接返回 HTTP 200，通过官方校验并与仓库中的索引一致。
+  公开 Release URL 和固定提交 Git 来源分别通过官方 DSH 安装、激活、认证、重启及锁清理验收。
+- [awesome-dsh-plugin 收录 PR #8442](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/8442)
+  和 [HackSing 收录申请 #335](https://github.com/HackSing/dsh-plugins/issues/335) 已提交。
+  提交时均为开放状态，维护者审核结果以相应链接为准。
+- 仓库已添加 `dsh-plugin` topic。桌面版 Latest Release 继续为 `desktop-v0.1.4`。
 
 官方机制依据：[DSH 插件市场](https://deepseek-harness.github.io/deepseek-harness/en/guide/plugin-market)、
 [插件打包](https://deepseek-harness.github.io/deepseek-harness/en/develop/basic/publish)。
