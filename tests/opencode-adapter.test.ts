@@ -1,7 +1,7 @@
 import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
-import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { OpenCodeBackend, normalizeOpenCodeUrl } from '../packages/opencode-adapter/index.ts';
@@ -94,7 +94,9 @@ test('OpenCode 每个 attempt 使用独立目录会话；准备幂等且冻结�
   const [ref, again] = await Promise.all([f.backend.prepare(input), f.backend.prepare(input)]); assert.deepEqual(ref, again);
   const second = await f.backend.prepare(f.input({ attemptId: 'second' })); assert.notEqual(ref.sessionId, second.sessionId); assert.notEqual(ref.turnId, second.turnId);
   assert.equal(f.calls.filter(c => c.path === '/session').length, 2);
-  assert.ok(f.calls.filter(c => c.path === '/session').every(c => c.directory === f.workspace));
+  // Windows runners may expose Temp through an 8.3 alias; the adapter binds its canonical directory.
+  const canonicalWorkspace = await realpath(f.workspace);
+  assert.ok(f.calls.filter(c => c.path === '/session').every(c => c.directory === canonicalWorkspace));
   await assert.rejects(f.backend.prepare(f.input({ prompt: 'changed' })), /冻结输入/);
   await assert.rejects(f.backend.start(ref, f.input({ prompt: 'changed after prepare' })), /冻结输入/);
   await assert.rejects(f.backend.prepare(f.input({ attemptId: 'outside', workspace: f.root })), /工作区目录/);
@@ -106,7 +108,7 @@ test('OpenCode start 立即异步派发，完整读取绑定本条消息的终�
   const started = await f.backend.start(ref, input); assert.equal(started.state, 'running'); assert.equal(f.dispatches, 1);
   assert.equal(ref.turnId.split('_')[1].length, 26);
   const dispatch = f.calls.find(c => c.path.endsWith('/prompt_async'))!;
-  assert.equal(dispatch.body.messageID, ref.turnId); assert.deepEqual(dispatch.body.model, { providerID: 'local', modelID: 'fixture-model' }); assert.equal(dispatch.directory, f.workspace);
+  assert.equal(dispatch.body.messageID, ref.turnId); assert.deepEqual(dispatch.body.model, { providerID: 'local', modelID: 'fixture-model' }); assert.equal(dispatch.directory, await realpath(f.workspace));
   assert.equal((await f.backend.query(ref)).state, 'running');
   const output = `{"summary":"${'完整产物'.repeat(30000)}","artifacts":[]}`; f.finish(ref, output);
   const result = await f.backend.readResult(ref); assert.equal(result.state, 'completed'); assert.ok(result.output === output, '完整多段产物应保持字节内容，不能截断或插入换行'); assert.ok(result.terminalEventId); assert.deepEqual(result.usage, { inputTokens: 30, outputTokens: 20, costUsd: 0.02 });

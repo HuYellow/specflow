@@ -23,6 +23,8 @@
     "dsh:typecheck": "node scripts/toolchain.mjs dsh-typecheck",
     "dsh:test": "node scripts/toolchain.mjs dsh-test",
     "dsh:smoke": "node scripts/toolchain.mjs dsh-smoke",
+    "dsh:distribution": "node scripts/toolchain.mjs dsh-distribution",
+    "dsh:market": "node scripts/toolchain.mjs dsh-market",
     "desktop:dev": "node scripts/toolchain.mjs desktop start",
     "desktop:prepare": "node scripts/toolchain.mjs desktop prepare",
     "desktop:package": "node scripts/toolchain.mjs desktop package",

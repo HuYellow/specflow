@@ -35,8 +35,13 @@ async function execute(argv, cwd, env, timeoutMs = 120_000) {
 }
 
 async function runSmoke() {
-  const artifact = resolve(option('--package', process.env.SPECFLOW_DSH_PACKAGE ?? join(repo, 'release', 'dsh', 'dsh-plugin-specflow-0.1.0.tgz')));
-  await access(artifact);
+  const publicSource = option('--source');
+  if (publicSource && !/^https:\/\/github\.com\/HuYellow\/specflow\/releases\/download\//.test(publicSource)
+    && !/^git\+https:\/\/github\.com\/HuYellow\/specflow\.git#[0-9a-f]{40}&path:\/plugins\/deepseek-specflow$/.test(publicSource)) {
+    throw new Error('Public smoke source must be a Specflow GitHub release asset or commit-pinned distribution package.');
+  }
+  const artifact = publicSource ?? resolve(option('--package', process.env.SPECFLOW_DSH_PACKAGE ?? join(repo, 'release', 'dsh', 'dsh-plugin-specflow-0.1.0.tgz')));
+  if (!publicSource) await access(artifact);
   const root = await mkdtemp(join(tmpdir(), 'specflow-dsh-smoke-'));
   const home = join(root, 'home'), profileDir = join(home, 'profiles', profileName);
   const env = { ...process.env, DSH_HOME: home, DSH_TELEMETRY_DISABLED: '1' };
@@ -62,7 +67,7 @@ async function runSmoke() {
     assert.equal(second.instanceId, first.instanceId);
     assert.equal(second.projectId, first.projectId);
     assert.equal(second.workItemId, first.workItemId);
-    const report = { runtimeVersion: JSON.parse(await readFile(join(packageDir('@deepseek-ai/dsh'), 'package.json'), 'utf8')).version, package: basename(artifact), installation: 'dsh plugin add <tarball> --ignore-scripts', first, restart: second };
+    const report = { runtimeVersion: JSON.parse(await readFile(join(packageDir('@deepseek-ai/dsh'), 'package.json'), 'utf8')).version, package: publicSource ?? basename(artifact), installation: 'dsh plugin add <source> --ignore-scripts', first, restart: second };
     const output = resolve(option('--report', join(repo, '.tools', 'dsh-host-smoke.json')));
     await mkdir(dirname(output), { recursive: true });
     await writeFile(output, JSON.stringify(report, null, 2));

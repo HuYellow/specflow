@@ -14,19 +14,38 @@ DeepSeek Harness。安装后，在一个已打开的会话右侧添加 **Specflo
 
 ## 安装
 
-在 DSH 的插件页选择安装第三方插件，输入发布包的绝对路径，例如
-`C:/Downloads/dsh-plugin-specflow-0.1.0.tgz`。审核安装来源后启用插件。
+公开版本见 [Specflow DSH 插件 0.1.0](https://github.com/HuYellow/specflow/releases/tag/dsh-plugin-specflow%400.1.0)。
+下载 [预构建安装包](https://github.com/HuYellow/specflow/releases/download/dsh-plugin-specflow%400.1.0/dsh-plugin-specflow-0.1.0.tgz)
+和同一 Release 的 `SHA256SUMS.txt`。在 DSH 的插件页选择安装第三方插件，输入发布包的
+HTTPS 地址或下载后的绝对路径。审核安装来源后启用插件。
 桌面版请使用自身的插件管理入口，以便安装到桌面版管理的 profile。
 
 CLI/Web 用户也可以安装到 Web profile：
 
 ```sh
-dsh plugin --profile web add /absolute/path/dsh-plugin-specflow-0.1.0.tgz
+dsh plugin --profile web add https://github.com/HuYellow/specflow/releases/download/dsh-plugin-specflow%400.1.0/dsh-plugin-specflow-0.1.0.tgz
 dsh web
 ```
 
-发布到 npm 后可以将安装来源替换为 `dsh-plugin-specflow@0.1.0`。
-本仓库提供发布包与发布命令，不会自动替发布者上传到 npm 或插件市场。
+当前公开来源为 GitHub 预构建包和固定提交的 Git 分发，尚未发布到 npm。
+
+### 从“发现”页安装
+
+在 DSH 插件页的实验性插件中启用 **自定义插件市场**，进入 **发现 → 添加索引源**，添加：
+
+```text
+https://raw.githubusercontent.com/HuYellow/specflow/main/market/dsh/index.json
+```
+
+然后找到 **Specflow 工程流程工作台**，确认兼容版本和来源后安装。
+此索引由 Specflow 项目维护，安装来源固定到包含预构建代码的 Git 提交和插件子目录。
+
+### 停用与移除
+
+先停止正在运行的 Specflow 操作，再在同一 profile 的插件页停用或移除插件。
+CLI/Web 用户也可执行 `dsh plugin --profile web remove dsh-plugin-specflow`。
+工程数据库、执行日志和隔离工作区默认保留在 `$DSH_HOME/specflow` 或配置的 `dataDir`。
+如需清理，先备份并确认没有宿主使用该目录；登记的项目源仓库不属于插件数据目录。
 
 ## 使用
 
@@ -114,9 +133,13 @@ npm run dsh:smoke
 三个验收脚本的结果分别写入 `.tools/dsh-host-smoke.json`、控制台及
 `.tools/dsh-client-qa/report.json`。这些运行时与报告不进入发布包。
 
-发布者在通过验证后，可以在本目录运行 `npm publish --access public`。
-发布时会重新构建；确认包名归属与 npm 登录身份后执行。
-DSH 的“发现”页使用独立的市场 JSON 索引，发布到 npm 后再将此包和兼容版本加入索引。
+公开分发使用同一仓库的 `codex/dsh-distribution` 分支，保持插件子目录路径，
+并用 `dsh-plugin-specflow@<版本>` 标签标记包含预构建代码的提交。
+`npm run dsh:distribution` 准备仅含运行文件的 Git 分发树；`npm run dsh:market -- generate`
+生成官方格式的固定提交索引。完整发布步骤见仓库中的 `docs/implementation/dsh-publication.md`。
+
+`npm` 是另一种可选分发方式。配置发布账号后，可在本目录运行
+`npm publish --access public`；发布前应完成相同验证，并更新索引的安装来源。
 
 ## 许可证
 

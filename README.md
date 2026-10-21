@@ -21,7 +21,7 @@ SpecFlow 是面向本地 Git 仓库的软件工程工作台，提供独立桌面
 | 使用方式 | 操作入口 | 模型执行 | 安装与数据 |
 | --- | --- | --- | --- |
 | 独立桌面版 | SpecFlow 工程窗口 | 默认内置 Maka；可连接本机 OpenCode | 平台安装包；工程数据位于桌面应用数据目录 |
-| DSH 插件 | Harness 会话右侧的 Specflow 标签 | 使用 Harness 中配置的模型，按尝试创建独立会话 | 独立 `.tgz` / npm 插件包；默认数据目录为 `$DSH_HOME/specflow` |
+| DSH 插件 | Harness 会话右侧的 Specflow 标签 | 使用 Harness 中配置的模型，按尝试创建独立会话 | 公开 `.tgz` / 固定提交的 Git 插件包；默认数据目录为 `$DSH_HOME/specflow` |
 
 桌面版与插件共享 `packages/specflow-core` 中的流程和接纳规则，分别构建和发布。插件源码、依赖锁文件与发布清单位于 `plugins/deepseek-specflow`。已有桌面数据不会自动迁移到插件。
 
@@ -45,14 +45,20 @@ SpecFlow 是面向本地 Git 仓库的软件工程工作台，提供独立桌面
 
 当前插件为 **`dsh-plugin-specflow@0.1.0`**，兼容 **DSH `0.2.1-rc.2`、宿主 Node.js 24+ 和本机 Git**。DSH 桌面版使用 Electron 内嵌 Node；兼容要求针对宿主进程。
 
-使用构建产物 `release/dsh/dsh-plugin-specflow-0.1.0.tgz`，在 DSH 插件页选择安装第三方插件，输入该文件的绝对路径并启用。CLI/Web 用户可以安装到 Web profile：
+从 [DSH 插件 Release](https://github.com/HuYellow/specflow/releases/tag/dsh-plugin-specflow%400.1.0) 下载预构建包与 `SHA256SUMS.txt`，在 DSH 插件页选择安装第三方插件，输入下载地址或本地文件的绝对路径并启用。CLI/Web 用户可以直接安装公开包：
 
 ```sh
-dsh plugin --profile web add /absolute/path/dsh-plugin-specflow-0.1.0.tgz
+dsh plugin --profile web add https://github.com/HuYellow/specflow/releases/download/dsh-plugin-specflow%400.1.0/dsh-plugin-specflow-0.1.0.tgz
 dsh web
 ```
 
-本仓库当前提供可安装的发布包与构建命令，尚未上传 npm 或插件市场。源码构建方法见下文“DSH 插件构建与发布”；CI 成功后也会保存 `dsh-plugin-specflow` 构建产物。
+也可在 DSH 的实验性插件中启用 **自定义插件市场**，进入 **发现 → 添加索引源**，添加以下地址，再选择 Specflow 安装：
+
+```text
+https://raw.githubusercontent.com/HuYellow/specflow/main/market/dsh/index.json
+```
+
+该索引由 Specflow 项目维护，固定到包含预构建代码的 Git 提交。当前公开安装通过 GitHub 完成，尚未发布 npm 包。源码构建方法见下文“DSH 插件构建与发布”；CI 也会保存 `dsh-plugin-specflow` 构建产物。
 
 发布包旁的 `SHA256SUMS.txt` 记录 SHA-256。Windows 用户可运行
 `Get-FileHash release/dsh/dsh-plugin-specflow-0.1.0.tgz -Algorithm SHA256` 核对下载或构建后的文件。
@@ -140,7 +146,14 @@ npm run dsh:pack
 
 输出为 `release/dsh/dsh-plugin-specflow-0.1.0.tgz` 和 `release/dsh/SHA256SUMS.txt`。发布包只包含预构建 Host、浏览器客户端、配置层、说明和许可证；浏览器使用 DSH 提供的 React。插件版本由 `plugins/deepseek-specflow/package.json` 独立维护，插件报告的版本号和发布清单使用同一来源。
 
-完成验证后，在插件目录使用发布者的 npm 账号执行：
+GitHub 公开发布使用 `codex/dsh-distribution` 预构建分支和 `dsh-plugin-specflow@<版本>` 标签，独立于桌面版 Release。分发包只保留运行文件；市场索引固定到对应的 Git 提交。
+
+```sh
+npm run dsh:distribution
+npm run dsh:market -- validate
+```
+
+完整的发布、索引生成与公开安装验证步骤见 [DSH 生态发布说明](docs/implementation/dsh-publication.md)。需要改为 npm 分发时，在插件目录使用发布者的 npm 账号执行：
 
 ```sh
 cd plugins/deepseek-specflow
@@ -148,7 +161,7 @@ npm publish --dry-run
 npm publish --access public
 ```
 
-公开 npm 包发布后，用户才可以通过 `dsh-plugin-specflow@0.1.0` 安装；DSH“发现”页的市场索引需要另行发布。完整构建、安装与发布约定见 [插件 README](plugins/deepseek-specflow/README.md) 和 [插件交付说明](docs/implementation/dsh-plugin.md)。
+只有公开 npm 包发布后，才可把安装来源替换为 `dsh-plugin-specflow@0.1.0`。插件安装与运行约定见 [插件 README](plugins/deepseek-specflow/README.md)，实现与验收见 [插件交付说明](docs/implementation/dsh-plugin.md)。
 
 ## 验证
 
@@ -195,7 +208,7 @@ Maka 当前固定为 **Apache Maka 0.2.0 的签名正式源码发行版**。`con
 | 主题 | 文档 |
 | --- | --- |
 | 安装、更新、发布与桌面数据 | [桌面交付](docs/implementation/desktop.md) |
-| DSH 插件安装、开发、发布与验收 | [插件 README](plugins/deepseek-specflow/README.md) · [交付说明](docs/implementation/dsh-plugin.md) |
+| DSH 插件安装、开发、发布与验收 | [插件 README](plugins/deepseek-specflow/README.md) · [交付说明](docs/implementation/dsh-plugin.md) · [生态发布](docs/implementation/dsh-publication.md) |
 | 总体方案与执行底座 | [实施方案](docs/brainstorm/specflow-harness.md) · [Maka 评估](docs/brainstorm/maka-foundation-review.md) · [运行时管理](docs/implementation/maka-runtime-management.md) |
 | 需求正文、上传与版本失效 | [需求输入](docs/implementation/requirements-input.md) |
 | 项目章程与独立澄清 | [章程与澄清](docs/implementation/constitution-clarify.md) |

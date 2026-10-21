@@ -62,7 +62,8 @@ dsh web
 桌面用户可在 DSH 插件页输入 tarball 的绝对路径安装。
 公开发布时，在插件源码目录执行 `npm publish --access public`。
 该命令需要发布者的 npm 身份与包名权限。
-本次未上传 npm，也未发布市场索引。
+公开安装包和市场索引见 [生态发布说明](dsh-publication.md)。
+npm 包尚未发布，当前使用 GitHub 预构建包与固定提交的 Git 来源。
 
 包采用九个文件的白名单。
 只包含预构建代码、配置、说明和许可证。

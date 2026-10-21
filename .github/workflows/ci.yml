@@ -41,6 +41,12 @@ jobs:
       - run: npm install --ignore-scripts --no-audit --no-fund --registry https://registry.npmjs.org @deepseek-ai/dsh@0.2.1-rc.2
         working-directory: .tools/dsh-validation
       - run: npm run dsh:smoke
+      - run: node --test scripts/dsh-market.test.mjs
+      - name: Fetch the pinned DSH distribution for source verification
+        run: |
+          $dshDistributionCommit = (Get-Content -Raw market/dsh/index.json | ConvertFrom-Json).plugins[0].versions[0].source.commit
+          git fetch --no-tags origin $dshDistributionCommit
+      - run: node scripts/dsh-market.mjs validate
       - uses: actions/upload-artifact@v4
         with:
           name: dsh-plugin-specflow

@@ -1,0 +1,64 @@
+{
+  "format": 1,
+  "title": {
+    "en": "Specflow plugins",
+    "zh": "Specflow 插件市场"
+  },
+  "description": {
+    "en": "Official distribution index maintained by the Specflow project.",
+    "zh": "由 Specflow 项目维护的官方插件分发索引。"
+  },
+  "metadata": {
+    "categories": {
+      "engineering": {
+        "title": {
+          "en": "Software engineering",
+          "zh": "软件工程"
+        }
+      }
+    }
+  },
+  "plugins": [
+    {
+      "name": "dsh-plugin-specflow",
+      "title": {
+        "en": "Specflow",
+        "zh": "Specflow 工程流程工作台"
+      },
+      "description": {
+        "en": "Requirements, specifications, tasks, independent review and human acceptance in a DSH sidebar.",
+        "zh": "在 DSH 侧栏管理需求、规格、任务、独立复核与人工验收。"
+      },
+      "author": "SpecFlow contributors",
+      "homepage": "https://github.com/HuYellow/specflow/tree/main/plugins/deepseek-specflow",
+      "repository": {
+        "url": "https://github.com/HuYellow/specflow",
+        "directory": "plugins/deepseek-specflow"
+      },
+      "metadata": {
+        "category": "engineering",
+        "keywords": [
+          "dsh-plugin",
+          "specflow",
+          "spec-driven-development",
+          "workflow"
+        ]
+      },
+      "versions": [
+        {
+          "version": "0.1.0",
+          "publishTimestamp": 1792568280,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/HuYellow/specflow.git",
+            "commit": "4c6e4f2cdd65054bfc0c607a921cb41a00886659",
+            "path": "plugins/deepseek-specflow"
+          },
+          "engines": {
+            "dsh": "0.2.1-rc.2"
+          }
+        }
+      ]
+    }
+  ]
+}
