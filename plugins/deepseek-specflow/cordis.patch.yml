@@ -1,0 +1,3 @@
+- insert:
+    - id: specflow
+      name: dsh-plugin-specflow
