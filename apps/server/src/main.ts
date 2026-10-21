@@ -1,6 +1,5 @@
 import { resolve, join } from 'node:path';
-import { Store } from './store.ts';
-import { EngineeringService } from './service.ts';
+import { createEngineeringRuntime } from '../../../packages/specflow-core/index.ts';
 import { SandboxBackend } from './sandbox-backend.ts';
 import { MakaBackend } from '../../../packages/maka-adapter/index.ts';
 import { createApp } from './app.ts';
@@ -9,12 +8,11 @@ import { BackendRegistry } from '../../../packages/execution-contract/registry.t
 import { RuntimeConfiguration } from './runtime-configuration.ts';
 const dataDir = resolve(process.env.SPECFLOW_DATA_DIR || '.specflow-data/local');
 const maka = new MakaBackend(resolve(process.env.SPECFLOW_MAKA_PACKAGE || '.tools/maka/node_modules/maka-agent'), resolve(process.env.SPECFLOW_MAKA_ROOT || join(dataDir, 'maka', MAKA_VERSION)), join(dataDir, 'workspaces'));
-const store = new Store(`${dataDir}/engineering.sqlite`);
 const registry = new BackendRegistry({ maka, sandbox: new SandboxBackend() });
 const runtimeConfiguration = new RuntimeConfiguration(dataDir, registry);
 await runtimeConfiguration.initialize();
-const service = new EngineeringService(store, dataDir, registry, runtimeConfiguration);
-await service.initialize();
+const runtime = await createEngineeringRuntime({ dataDir, backends: registry, runtimeConfiguration });
+const { service } = runtime;
 if (process.env.SPECFLOW_NO_DEMO !== '1') await service.seedDemo();
 const app = await createApp(service, { staticRoot: resolve(process.env.SPECFLOW_STATIC_ROOT || 'dist/web'), desktopSecret: process.env.SPECFLOW_DESKTOP_SECRET });
 await app.listen({ host: '127.0.0.1', port: Number(process.env.SPECFLOW_PORT || 4317) });
@@ -28,7 +26,7 @@ const close = async () => {
   for (const controller of service.verificationControllers.values()) controller.abort();
   // SSE connections otherwise keep Fastify.close pending indefinitely.
   const closingApp = app.close(); app.server.closeAllConnections();
-  await closingApp; await registry.close(); store.close(); process.exit(0);
+  await closingApp; await runtime.close(); process.exit(0);
 };
 process.on('SIGINT', close); process.on('SIGTERM', close);
 if (process.send) {

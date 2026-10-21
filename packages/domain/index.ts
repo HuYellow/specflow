@@ -9,7 +9,7 @@ export type NodeType = 'agent' | 'clarify' | 'review' | 'verify' | 'gate' | 'hum
 export type ExecutionState = 'pending' | 'starting' | 'running' | 'waiting_interaction' | 'completed' | 'failed' | 'cancelled' | 'reconciling';
 export type GateState = 'unchecked' | 'passed' | 'blocked' | 'stale';
 export type Role = 'analyst' | 'architect' | 'developer' | 'reviewer';
-export const backendIds = ['maka', 'opencode', 'sandbox'] as const;
+export const backendIds = ['maka', 'opencode', 'sandbox', 'dsh'] as const;
 export type BackendId = typeof backendIds[number];
 export interface ModelTarget { backend: BackendId; connectionId: string; connectionSlug: string; model: string; rootId?: string }
 export interface VerificationCommand { id: string; executable: string; args: string[]; timeoutMs: number }

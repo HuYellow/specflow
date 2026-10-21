@@ -1,8 +1,8 @@
 import { DomainError, type BackendId, type ModelTarget } from '../domain/index.ts';
 import type { BackendCapabilities, ExecutionBackend } from './index.ts';
 
-export type BackendMap = Record<'maka' | 'sandbox', ExecutionBackend> & Partial<Record<BackendId, ExecutionBackend>>;
-export const backendNames: Record<BackendId, string> = { maka: 'Maka Runtime Host', opencode: 'OpenCode', sandbox: '本地验收后端' };
+export type BackendMap = Partial<Record<BackendId, ExecutionBackend>>;
+export const backendNames: Record<BackendId, string> = { maka: 'Maka Runtime Host', opencode: 'OpenCode', sandbox: '本地验收后端', dsh: 'DeepSeek Harness' };
 export interface BackendDescriptor { id: BackendId; name: string; configurable: boolean; capabilities: BackendCapabilities }
 
 /** Owns runtime discovery; attempts always dispatch through their frozen backend ID. */
@@ -18,7 +18,8 @@ export class BackendRegistry {
     return backend;
   }
   async catalog(): Promise<{ backends: BackendDescriptor[]; targets: ModelTarget[] }> {
-    const rows = await Promise.all(Object.entries(this.implementations).map(async ([key, backend]) => {
+    const implementations = Object.entries(this.implementations).filter((entry): entry is [BackendId, ExecutionBackend] => !!entry[1]);
+    const rows = await Promise.all(implementations.map(async ([key, backend]) => {
       const id = key as BackendId;
       let capabilities: BackendCapabilities;
       let targets: ModelTarget[] = [];

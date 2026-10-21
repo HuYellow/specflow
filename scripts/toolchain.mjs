@@ -50,6 +50,7 @@ try {
   else if (command === 'test') { await buildWorkspacePlugin(); await run(['--import', 'tsx', '--test', '--test-concurrency=1', ...(process.argv.slice(3).length ? process.argv.slice(3) : ['tests/*.test.ts'])]); }
   else if (command === 'maka-probe') { await buildWorkspacePlugin(); await run([require.resolve('tsx/cli'), 'scripts/maka-probe.ts']); }
   else if (command === 'opencode-smoke') await run(['--import', 'tsx', 'scripts/opencode-runtime-smoke.mjs']);
+  else if (['dsh-build', 'dsh-pack', 'dsh-typecheck', 'dsh-test', 'dsh-smoke'].includes(command)) await run(['scripts/dsh-plugin.mjs', command.slice(4), ...process.argv.slice(3)]);
   else if (command === 'maka-setup') {
     await run(['scripts/maka-setup.mjs']);
   } else throw new Error(`Unknown command: ${command}`);

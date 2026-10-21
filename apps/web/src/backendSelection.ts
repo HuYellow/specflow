@@ -5,12 +5,13 @@ export interface BackendCatalog {
   maka: BackendCapabilities;
   opencode: BackendCapabilities;
   sandbox: BackendCapabilities;
+  dsh?: BackendCapabilities;
   backends: { id: BackendId; name: string; capabilities: BackendCapabilities; configurable: boolean }[];
   targets: ModelTarget[];
   configuration: { opencode: { baseUrl: string; username: string; hasPassword: boolean } };
 }
 
-export const backendNames: Record<BackendId, string> = { maka: 'Maka Runtime Host', opencode: 'OpenCode', sandbox: 'Sandbox 示例' };
+export const backendNames: Record<BackendId, string> = { maka: 'Maka Runtime Host', opencode: 'OpenCode', sandbox: 'Sandbox 示例', dsh: 'DeepSeek Harness' };
 
 export function projectBackend(project?: Pick<Project, 'executionBackend' | 'demo'>): BackendId {
   return project?.executionBackend || (project?.demo ? 'sandbox' : 'maka');

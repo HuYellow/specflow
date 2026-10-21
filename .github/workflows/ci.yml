@@ -26,6 +26,33 @@ jobs:
         env:
           ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
       - run: npm run maka:setup
+      - run: npm ci --ignore-scripts
+        working-directory: plugins/deepseek-specflow
       - run: npm run typecheck
+      - run: npm run dsh:typecheck
       - run: npm test
+      - run: npm run dsh:test
       - run: npm run build
+      - run: npm run dsh:pack
+      - uses: pnpm/action-setup@v4
+        with:
+          version: '11.25.0'
+      - run: New-Item -ItemType Directory -Force .tools/dsh-validation
+      - run: npm install --ignore-scripts --no-audit --no-fund --registry https://registry.npmjs.org @deepseek-ai/dsh@0.2.1-rc.2
+        working-directory: .tools/dsh-validation
+      - run: npm run dsh:smoke
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dsh-plugin-specflow
+          path: release/dsh/*
+          if-no-files-found: error
+      - name: Preserve DSH validation reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dsh-plugin-validation
+          path: |
+            .tools/dsh-host-smoke.json
+            .tools/dsh-client-qa/report.json
+            .tools/dsh-client-qa/*.png
+          if-no-files-found: ignore
