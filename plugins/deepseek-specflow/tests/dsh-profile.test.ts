@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
 import { acquireProfile } from '../src/profile.ts';
@@ -45,11 +45,34 @@ test('DSH default profile follows the official DSH_HOME resolver', async () => {
   try {
     process.env.DSH_HOME = temp.root;
     const profile = await acquireProfile();
-    assert.equal(profile.dataDir, join(temp.root, 'specflow'));
-    await profile.release();
+    try {
+      // Windows runners may expose TEMP through an 8.3 alias (RUNNER~1).
+      // acquireProfile intentionally returns the canonical filesystem identity.
+      assert.equal(profile.dataDir, await realpath(join(temp.root, 'specflow')));
+    } finally { await profile.release(); }
   } finally {
     if (previous === undefined) delete process.env.DSH_HOME;
     else process.env.DSH_HOME = previous;
     await temp.cleanup();
+  }
+});
+
+test('DSH profile aliases share canonical ownership while distinct directories remain separate', async () => {
+  const temp = await temporaryProfile();
+  let aliased: Awaited<ReturnType<typeof acquireProfile>> | undefined;
+  let distinct: Awaited<ReturnType<typeof acquireProfile>> | undefined;
+  try {
+    const target = join(temp.root, 'target'), alias = join(temp.root, 'alias'), other = join(temp.root, 'other');
+    await mkdir(target);
+    await symlink(target, alias, process.platform === 'win32' ? 'junction' : 'dir');
+    aliased = await acquireProfile(alias);
+    assert.equal(aliased.dataDir, await realpath(target));
+    await assert.rejects(acquireProfile(target), /profile is locked/);
+    distinct = await acquireProfile(other);
+    assert.equal(distinct.dataDir, await realpath(other));
+    assert.notEqual(distinct.dataDir, aliased.dataDir);
+    assert.notEqual(distinct.instanceId, aliased.instanceId);
+  } finally {
+    await distinct?.release(); await aliased?.release(); await temp.cleanup();
   }
 });
