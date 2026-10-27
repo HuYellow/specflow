@@ -3,6 +3,7 @@ import { resolve, relative, isAbsolute, join } from 'node:path';
 import { realpath, readdir, readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { assert, DomainError, type VerificationCommand } from '../domain/index.ts';
+import { terminatePosixProcessGroup } from './process-group.ts';
 
 export async function safePath(root: string, name: string) {
   assert(!isAbsolute(name) && !name.includes('\0'), 'PATH_INVALID', '产物路径必须位于工作空间内');
@@ -68,22 +69,8 @@ async function terminateProcessTree(pid: number) {
     });
     return;
   }
-  // Each command starts a new POSIX process group. Killing only the shell/parent
-  // leaves children alive, including tools that ignore the first SIGTERM.
-  const signalGroup = (signal: NodeJS.Signals) => {
-    try { process.kill(-pid, signal); return true; }
-    catch (error) { if ((error as NodeJS.ErrnoException).code === 'ESRCH') return false; throw error; }
-  };
-  if (!signalGroup('SIGTERM')) return;
-  await new Promise(done => setTimeout(done, 250));
-  if (!signalGroup('SIGKILL')) return;
-  const deadline = Date.now() + 5000;
-  while (Date.now() < deadline) {
-    try { process.kill(-pid, 0); }
-    catch (error) { if ((error as NodeJS.ErrnoException).code === 'ESRCH') return; throw error; }
-    await new Promise(done => setTimeout(done, 50));
-  }
-  throw new DomainError('COMMAND_STOP_UNCONFIRMED', 'Process group still exists after termination');
+  // Each command starts a new POSIX process group, so descendants are included.
+  await terminatePosixProcessGroup(pid);
 }
 
 export async function execute(executable: string, args: string[], cwd: string, timeoutMs = 120000, signal?: AbortSignal): Promise<CommandResult> {
