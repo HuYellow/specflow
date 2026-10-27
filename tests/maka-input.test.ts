@@ -13,13 +13,14 @@ function input(prompt: string): FrozenInput {
 
 class FakeHostBackend extends MakaBackend {
   connections = 0;
+  turnSnapshot: Record<string, unknown> = { status: 'running' };
   requests: { operation: string; input: unknown }[] = [];
   constructor() { super('unused-package', 'unused-root'); }
   override async connect() {
     this.connections++;
     return { rootId: 'fake-host', request: async (operation: string, value: unknown) => {
       this.requests.push({ operation, input: value });
-      return operation === 'turn.start' ? { kind: 'started', turn: { runId: 'fake-run' } } : {};
+      return operation === 'turn.start' ? { kind: 'started', turn: { runId: 'fake-run' } } : operation === 'turn.query' ? { turn: this.turnSnapshot } : {};
     }, status: async () => ({}), openSessionSubscription: async () => ({}), close: async () => {} };
   }
 }
@@ -82,4 +83,30 @@ test('start 独立拒绝超限文本，即使调用方提供了现成执行身�
   await assert.rejects(backend.start(ref, input('需'.repeat(textLimit / 3 + 1))), isTooLarge(textLimit + 3));
   assert.equal(backend.connections, 0);
   assert.deepEqual(backend.requests, []);
+});
+
+test('Maka reports native turn limits without promising resume budgets or fabricated usage', async () => {
+  const backend = new FakeHostBackend(), capabilities = await backend.inspect();
+  assert.equal(capabilities.details?.stepLimit.enforcement, 'native');
+  assert.equal(capabilities.details?.resume.preservesStepBudget, false);
+  assert.equal(capabilities.details?.usage.availability, 'none');
+  assert.equal(capabilities.maxInputBytes, textLimit);
+  backend.turnSnapshot = { status: 'failed', terminalEventId: 'step-terminal', failureClass: 'tool_step_cap_reached' };
+  const limited = await backend.query(ref);
+  assert.equal(limited.termination?.reason, 'step_limit'); assert.equal(limited.termination?.confirmed, true);
+  assert.equal(limited.usageMeasurement?.completeness, 'unknown');
+  assert.equal(limited.usageMeasurement?.inputTokens, null); assert.equal(limited.usageMeasurement?.costUsd, null);
+  assert.equal(limited.usage, undefined);
+  backend.turnSnapshot = { status: 'cancelled', terminalEventId: 'stop-terminal', abortSource: 'user_stop' };
+  assert.equal((await backend.query(ref)).termination?.reason, 'user_cancelled');
+  backend.turnSnapshot = { status: 'running' };
+  await backend.stop(ref);
+  assert.equal((await backend.query(ref)).termination, undefined, 'a stop acknowledgement is not terminal proof');
+});
+
+test('Maka rejects a target from another Host before creating a session', async () => {
+  const backend = new FakeHostBackend(), frozen = input('frozen target');
+  frozen.target = { ...frozen.target, rootId: 'original-host' };
+  await assert.rejects(backend.prepare(frozen), error => error instanceof DomainError && error.code === 'BACKEND_IDENTITY_CHANGED');
+  assert.equal(backend.requests.length, 0);
 });

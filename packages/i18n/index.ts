@@ -5,10 +5,12 @@ import { messages as server } from './server.ts';
 import { messages as desktop } from './desktop.ts';
 import { messages as defaults } from './defaults.ts';
 import { messages as plugin } from './plugin.ts';
+import { messages as execution } from './execution.ts';
+import { messages as executionDiagnostics } from './execution-diagnostics.ts';
 
 export type Locale = 'zh-CN' | 'en';
 export type MessageValues = Record<string, string | number | null | undefined>;
-export const englishMessages: Readonly<Record<string, string>> = Object.freeze({ ...plugin, ...server, ...desktop, ...defaults, ...shell, ...documents, ...workflow });
+export const englishMessages: Readonly<Record<string, string>> = Object.freeze({ ...plugin, ...server, ...desktop, ...defaults, ...shell, ...documents, ...workflow, ...execution, ...executionDiagnostics });
 
 /** Select a supported language using the preference order, including HTTP quality values. */
 export function normalizeLocale(value?: string | readonly string[] | null): Locale {

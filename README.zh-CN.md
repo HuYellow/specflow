@@ -221,7 +221,8 @@ Maka 当前固定为 **Apache Maka 0.2.0 的签名正式源码发行版**。`con
 | 项目、工作项与产物归属 | [工程工作空间](docs/implementation/workspaces.md) |
 | AI 完整文档与人类简报 | [双份文档](docs/implementation/dual-audience-documents.md) |
 | 双视角复核与历史问题复验 | [自纠正与复核](docs/implementation/self-correction.md) |
+| 执行预算、停止恢复与有限自动修订 | [实施记录与使用说明](docs/implementation/agent-loop-optimization.md) · [界面验收](docs/implementation/agent-loop-qa/README.md) · [评估工具](docs/implementation/agent-evaluation.md) |
 | 前端工作台与操作验收 | [前端实施记录](docs/implementation/frontend-workbench-delivery.md) |
 | 本地模型联调与验证结果 | [Maka 联调](docs/implementation/maka-client-test.md) · [实施与验收](docs/implementation/validation.md) |
 
-复杂分支、并行编码、自动修订、实时协作和远程执行留待后续完善。
+流程页支持选择自动推进与有限自动修订，默认仍为手动；必要的澄清、权限和人工接纳继续保留。复杂分支、并行编码、实时协作和远程执行留待后续完善。

@@ -56,6 +56,7 @@ async function fixture(t: TestContext) {
 test('DSH advertises the host model catalog and binds each frozen attempt to its own identity', async t => {
   const f = await fixture(t), capabilities = await f.backend.inspect();
   assert.equal(capabilities.available, true); assert.equal(capabilities.canResume, false); assert.equal(capabilities.stepLimit, 'native'); assert.equal(capabilities.readOnlyReview, true);
+  assert.equal(capabilities.details?.stepLimit.unit, 'host-step'); assert.equal(capabilities.details?.resume.mode, 'reconcile-only'); assert.equal(capabilities.details?.usage.cost, 'unknown');
   const input = f.input(), [ref, same] = await Promise.all([f.backend.prepare(input), f.backend.prepare(input)]);
   assert.deepEqual(ref, same); assert.equal(ref.backend, 'dsh'); assert.equal(f.creations, 0);
   const second = await f.backend.prepare(f.input({ attemptId: 'second' })); assert.notEqual(second.sessionId, ref.sessionId);
@@ -72,6 +73,7 @@ test('DSH dispatches once and reads the identified turn result after persistence
   f.finish(ref.sessionId);
   const result = await f.backend.readResult(ref);
   assert.equal(result.state, 'completed'); assert.match(result.output!, /done/); assert.equal(result.terminalEventId, `${ref.sessionId}:3`); assert.deepEqual(result.usage, { inputTokens: 20, outputTokens: 10, costUsd: null }); assert.ok(f.flushes > 0);
+  assert.equal(result.termination?.reason, 'natural_completion'); assert.equal(result.termination?.confirmed, true); assert.equal(result.usageMeasurement?.completeness, 'partial'); assert.equal(result.usageMeasurement?.scope, 'turn'); assert.equal(result.usageMeasurement?.eventId, result.terminalEventId);
   const afterRestart = f.connect(); f.logs.clear(); f.live.clear();
   assert.deepEqual(await afterRestart.readResult(ref), result);
   assert.deepEqual(await afterRestart.start(ref, input), result); assert.equal(f.dispatches, 1);
@@ -132,6 +134,7 @@ test('DSH pre-step rejects the next model step at maxSteps and records a failed 
   assert.equal((await listener({ agent, step: 1 }, next)).kind, 'enter');
   assert.equal((await listener({ agent, step: 2 }, next)).kind, 'reject'); assert.equal(admitted, 1);
   const result = await f.backend.query(ref); assert.equal(result.state, 'failed'); assert.match(result.error!, /最大 1 步/);
+  assert.equal(result.termination?.reason, 'step_limit'); assert.equal(result.termination?.confirmed, true);
 });
 
 test('DSH query refuses a session whose persistent workspace identity changed', async t => {
@@ -161,4 +164,24 @@ test('DSH stop before dispatch persists cancellation and cannot create or wake a
   assert.equal((await f.backend.start(ref, input)).state, 'cancelled');
   assert.equal((await f.connect().start(ref, input)).state, 'cancelled');
   assert.equal(f.creations, 0); assert.equal(f.dispatches, 0);
+});
+
+test('DSH stop without its own live handle stays unconfirmed until the original turn ends', async t => {
+  const f = await fixture(t), input = f.input(), ref = await f.backend.prepare(input); await f.backend.start(ref, input);
+  const observer = f.connect(); await observer.stop(ref);
+  const pending = await observer.query(ref);
+  assert.equal(pending.state, 'running'); assert.equal(pending.termination?.confirmed, false); assert.ok(pending.termination?.requestedAt);
+  await f.backend.stop(ref);
+  const stopped = await observer.query(ref);
+  assert.equal(stopped.state, 'cancelled'); assert.equal(stopped.termination?.confirmed, true);
+  assert.equal(stopped.usageMeasurement?.completeness, 'unknown'); assert.equal(stopped.usageMeasurement?.inputTokens, null);
+});
+
+test('DSH assistant messages without usage do not report zero token consumption', async t => {
+  const f = await fixture(t), input = f.input(), ref = await f.backend.prepare(input); await f.backend.start(ref, input);
+  f.finish(ref.sessionId);
+  const assistant = f.logs.get(ref.sessionId)!.events.find(event => event.type === 'assistant/message'); delete assistant.data.usage;
+  const result = await f.backend.readResult(ref);
+  assert.equal(result.state, 'completed'); assert.equal(result.usage, undefined);
+  assert.equal(result.usageMeasurement?.completeness, 'unknown'); assert.equal(result.usageMeasurement?.inputTokens, null); assert.equal(result.usageMeasurement?.outputTokens, null);
 });

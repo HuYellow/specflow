@@ -4,9 +4,10 @@ import type { Artifact, ArtifactRevision, Candidate, Comment, Decision, Evidence
 import type { AttentionItem } from './attention.ts';
 import type { BackendCatalog } from './backendSelection.ts';
 import { localizedDate, localizedLabels, t } from './i18n.ts';
+import type { AutomationRun, RepairCycle } from '../../../packages/domain/index.ts';
 export type { BackendCatalog } from './backendSelection.ts';
 export { targetLabel, serializeTarget } from './backendSelection.ts';
-export type Snapshot = { item: WorkItem; requirements: { current: RequirementRevision; history: RequirementRevision[] }; clarifications: ClarificationSession[]; clarificationDrafts: ClarificationDraft[]; project: Project; workflows: Workflow[]; runs: WorkflowRun[]; nodes: NodeRun[]; attempts: Attempt[]; bindings: ExecutionBinding[]; artifacts: Artifact[]; revisions: ArtifactRevision[]; candidates: Candidate[]; evidence: Evidence[]; findings: Finding[]; tasks: TaskRun[]; comments: Comment[]; decisions: Decision[]; interactions: Interaction[] };
+export type Snapshot = { item: WorkItem; requirements: { current: RequirementRevision; history: RequirementRevision[] }; clarifications: ClarificationSession[]; clarificationDrafts: ClarificationDraft[]; project: Project; workflows: Workflow[]; runs: WorkflowRun[]; nodes: NodeRun[]; attempts: Attempt[]; bindings: ExecutionBinding[]; artifacts: Artifact[]; revisions: ArtifactRevision[]; candidates: Candidate[]; evidence: Evidence[]; findings: Finding[]; tasks: TaskRun[]; comments: Comment[]; decisions: Decision[]; interactions: Interaction[]; repairCycles?: RepairCycle[]; automationRuns?: AutomationRun[] };
 export type Tab = 'flow' | 'requirements' | 'artifacts' | 'code' | 'runs';
 export type DocumentView = 'reading' | 'execution' | 'compare';
 export interface WorkspaceContext {

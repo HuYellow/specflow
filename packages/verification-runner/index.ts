@@ -1,8 +1,8 @@
 import { spawn } from 'node:child_process';
-import { resolve, relative, isAbsolute } from 'node:path';
+import { resolve, relative, isAbsolute, join } from 'node:path';
 import { realpath, readdir, readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
-import { assert, type VerificationCommand } from '../domain/index.ts';
+import { assert, DomainError, type VerificationCommand } from '../domain/index.ts';
 
 export async function safePath(root: string, name: string) {
   assert(!isAbsolute(name) && !name.includes('\0'), 'PATH_INVALID', '产物路径必须位于工作空间内');
@@ -36,8 +36,62 @@ export async function treeHash(root: string) {
   await visit(root, ''); return digest.digest('hex');
 }
 
-export async function execute(executable: string, args: string[], cwd: string, timeoutMs = 120000, signal?: AbortSignal) {
+export interface CommandResult {
+  exitCode: number | null;
+  stdout: string;
+  stderr: string;
+  timedOut: boolean;
+  cancelled: boolean;
+  terminationReason: 'completed' | 'timeout' | 'cancelled';
+  terminationConfirmed: boolean;
+  stdoutBytes: number;
+  stderrBytes: number;
+  stdoutTruncated: boolean;
+  stderrTruncated: boolean;
+}
+const outputLimitBytes = 1_000_000;
+
+/** A resolved stop means the owned process tree was signalled and reaped, not just that cancellation was requested. */
+async function terminateProcessTree(pid: number) {
+  if (process.platform === 'win32') {
+    await new Promise<void>((done, reject) => {
+      const killer = spawn(join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'taskkill.exe'), ['/pid', String(pid), '/t', '/f'], { windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'] });
+      let diagnostic = '';
+      killer.stderr.on('data', chunk => { diagnostic = (diagnostic + chunk.toString()).slice(-4000); });
+      const timer = setTimeout(() => { killer.kill(); reject(new DomainError('COMMAND_STOP_UNCONFIRMED', 'Windows process-tree termination did not finish')); }, 10000);
+      killer.once('error', error => { clearTimeout(timer); reject(new DomainError('COMMAND_STOP_UNCONFIRMED', error.message)); });
+      killer.once('close', code => {
+        clearTimeout(timer);
+        if (code === 0) done();
+        else reject(new DomainError('COMMAND_STOP_UNCONFIRMED', `taskkill exited ${code}${diagnostic ? `: ${diagnostic.trim()}` : ''}`));
+      });
+    });
+    return;
+  }
+  // Each command starts a new POSIX process group. Killing only the shell/parent
+  // leaves children alive, including tools that ignore the first SIGTERM.
+  const signalGroup = (signal: NodeJS.Signals) => {
+    try { process.kill(-pid, signal); return true; }
+    catch (error) { if ((error as NodeJS.ErrnoException).code === 'ESRCH') return false; throw error; }
+  };
+  if (!signalGroup('SIGTERM')) return;
+  await new Promise(done => setTimeout(done, 250));
+  if (!signalGroup('SIGKILL')) return;
+  const deadline = Date.now() + 5000;
+  while (Date.now() < deadline) {
+    try { process.kill(-pid, 0); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code === 'ESRCH') return; throw error; }
+    await new Promise(done => setTimeout(done, 50));
+  }
+  throw new DomainError('COMMAND_STOP_UNCONFIRMED', 'Process group still exists after termination');
+}
+
+export async function execute(executable: string, args: string[], cwd: string, timeoutMs = 120000, signal?: AbortSignal): Promise<CommandResult> {
   assert(args.every(x => !x.includes('\0')), 'COMMAND_INVALID', '命令参数包含非法字符');
+  assert(Number.isFinite(timeoutMs) && timeoutMs >= 0, 'COMMAND_INVALID', '命令时限必须为非负有限数值');
+  const notStarted = (reason: 'cancelled' | 'timeout'): CommandResult => ({ exitCode: null, stdout: '', stderr: '', timedOut: reason === 'timeout', cancelled: reason === 'cancelled', terminationReason: reason, terminationConfirmed: true, stdoutBytes: 0, stderrBytes: 0, stdoutTruncated: false, stderrTruncated: false });
+  if (signal?.aborted) return notStarted('cancelled');
+  if (timeoutMs === 0) return notStarted('timeout');
   let command = executable, argv = args;
   if (executable === 'node') command = process.execPath;
   if (executable === 'npm' && process.env.npm_execpath) { command = process.execPath; argv = [process.env.npm_execpath, ...args]; }
@@ -45,18 +99,41 @@ export async function execute(executable: string, args: string[], cwd: string, t
     assert([command, ...argv].every(x => !/[&|<>^%!\r\n]/.test(x)), 'COMMAND_INVALID', 'Windows 批处理参数包含不支持的控制字符');
     argv = ['/d', '/s', '/c', `"${[command, ...argv].map(x => `"${x.replaceAll('"', '""')}"`).join(' ')}"`]; command = 'cmd.exe';
   }
-  return await new Promise<{ exitCode: number | null; stdout: string; stderr: string; timedOut: boolean }>((done, reject) => {
-    const child = spawn(command, argv, { cwd, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], signal });
-    let stdout = '', stderr = '', timedOut = false;
-    const kill = () => {
-      if (child.pid && process.platform === 'win32') spawn('taskkill', ['/pid', String(child.pid), '/t', '/f'], { windowsHide: true, stdio: 'ignore' });
-      else child.kill('SIGTERM');
+  return await new Promise<CommandResult>((done, reject) => {
+    // Do not pass signal to spawn: Node's AbortError can precede close and only
+    // stops the direct child. Both cancellation and timeout use the same tree path.
+    const childEnvironment = { ...process.env };
+    // Node injects this into test workers. Forwarding it to a project's node
+    // --test suppresses execution as a recursive test run, then exits zero.
+    delete childEnvironment.NODE_TEST_CONTEXT;
+    const child = spawn(command, argv, { cwd, env: childEnvironment, windowsHide: true, detached: process.platform !== 'win32', stdio: ['ignore', 'pipe', 'pipe'] });
+    let stdout: Buffer = Buffer.alloc(0), stderr: Buffer = Buffer.alloc(0), stdoutBytes = 0, stderrBytes = 0;
+    let reason: 'cancelled' | 'timeout' | undefined, closed = false, code: number | null = null, stopConfirmed = false, settled = false, spawnError: Error | undefined;
+    const cleanup = () => { clearTimeout(timer); signal?.removeEventListener('abort', abort); };
+    const finish = () => {
+      if (settled || !closed || (reason && !stopConfirmed)) return;
+      settled = true; cleanup();
+      if (spawnError) { reject(spawnError); return; }
+      done({ exitCode: code, stdout: stdout.toString('utf8'), stderr: stderr.toString('utf8'), timedOut: reason === 'timeout', cancelled: reason === 'cancelled', terminationReason: reason || 'completed', terminationConfirmed: true, stdoutBytes, stderrBytes, stdoutTruncated: stdoutBytes > outputLimitBytes, stderrTruncated: stderrBytes > outputLimitBytes });
     };
-    const timer = setTimeout(() => { timedOut = true; kill(); }, timeoutMs);
-    child.stdout.on('data', x => { stdout = (stdout + x.toString()).slice(-1_000_000); });
-    child.stderr.on('data', x => { stderr = (stderr + x.toString()).slice(-1_000_000); });
-    child.on('error', error => { clearTimeout(timer); if (signal?.aborted) done({ exitCode: null, stdout, stderr: '执行已取消', timedOut }); else reject(error); });
-    child.on('close', code => { clearTimeout(timer); done({ exitCode: code, stdout, stderr, timedOut }); });
+    const stop = (cause: 'cancelled' | 'timeout') => {
+      if (settled || reason || closed) return;
+      reason = cause;
+      if (!child.pid) { stopConfirmed = true; finish(); return; }
+      void terminateProcessTree(child.pid).then(() => { stopConfirmed = true; finish(); }, error => {
+        if (settled) return;
+        settled = true; cleanup(); reject(error instanceof DomainError ? error : new DomainError('COMMAND_STOP_UNCONFIRMED', error instanceof Error ? error.message : String(error)));
+      });
+    };
+    const abort = () => stop('cancelled');
+    const timer = setTimeout(() => stop('timeout'), timeoutMs);
+    signal?.addEventListener('abort', abort, { once: true });
+    // Covers an abort between the preflight check and listener registration.
+    if (signal?.aborted) abort();
+    child.stdout.on('data', (chunk: Buffer) => { stdoutBytes += chunk.length; stdout = Buffer.concat([stdout, chunk]).subarray(-outputLimitBytes); });
+    child.stderr.on('data', (chunk: Buffer) => { stderrBytes += chunk.length; stderr = Buffer.concat([stderr, chunk]).subarray(-outputLimitBytes); });
+    child.once('error', error => { spawnError = error; });
+    child.once('close', exitCode => { code = exitCode; closed = true; finish(); });
   });
 }
 

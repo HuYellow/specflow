@@ -1,0 +1,153 @@
+{
+  "testedAt": "2026-10-27T17:09:10.574Z",
+  "modelCalls": 0,
+  "browser": "installed Chrome (headless)",
+  "screenshotRedaction": {
+    "selectors": [
+      ".workspace-directory",
+      ".workspace-option small"
+    ],
+    "reason": "Mask machine-specific temporary workspace paths in published screenshots only."
+  },
+  "checks": [
+    "1440px and 390px show partial token counts, unknown cost, unconfirmed stop, context manifest, and explicit process confirmation without horizontal overflow.",
+    "The standalone verification stop button cancels an actual local Node timer process; no subsequent command starts.",
+    "Dismissing process confirmation sends no request; accepting submits the current revision and explicit reason, and only then clears the unresolved verification block.",
+    "Both viewport sizes default to manual operation. Enabling bounded repair is an explicit checkbox choice; starting sends autoRepair=true and stopping cancels the controller and its controlled local execution.",
+    "The repair action creates a bounded cycle for the failed producer; the separate stop action cancels that cycle. The UI leaves repair mode selection to the service."
+  ],
+  "surfaces": [
+    {
+      "name": "execution-facts-1440",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "bodyWidth": 1440,
+      "chinese": [],
+      "screenshot": "execution-facts-1440.png"
+    },
+    {
+      "name": "execution-facts-390",
+      "viewport": {
+        "width": 390,
+        "height": 1000
+      },
+      "bodyWidth": 390,
+      "chinese": [],
+      "screenshot": "execution-facts-390.png"
+    },
+    {
+      "name": "verification-running-1440",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "bodyWidth": 1440,
+      "chinese": [],
+      "screenshot": "verification-running-1440.png"
+    },
+    {
+      "name": "verification-unconfirmed-390",
+      "viewport": {
+        "width": 390,
+        "height": 1000
+      },
+      "bodyWidth": 390,
+      "chinese": [],
+      "screenshot": "verification-unconfirmed-390.png"
+    },
+    {
+      "name": "automation-manual-1440",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "bodyWidth": 1440,
+      "chinese": [],
+      "screenshot": "automation-manual-1440.png"
+    },
+    {
+      "name": "automation-active-1440",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "bodyWidth": 1440,
+      "chinese": [],
+      "screenshot": "automation-active-1440.png"
+    },
+    {
+      "name": "automation-manual-390",
+      "viewport": {
+        "width": 390,
+        "height": 1000
+      },
+      "bodyWidth": 390,
+      "chinese": [],
+      "screenshot": "automation-manual-390.png"
+    },
+    {
+      "name": "automation-active-390",
+      "viewport": {
+        "width": 390,
+        "height": 1000
+      },
+      "bodyWidth": 390,
+      "chinese": [],
+      "screenshot": "automation-active-390.png"
+    }
+  ],
+  "requests": [
+    {
+      "path": "/api/node-runs/5ad3978a-6136-4c4b-be2a-f79c7bc61632/stop-verification",
+      "body": {}
+    },
+    {
+      "path": "/api/node-runs/5ad3978a-6136-4c4b-be2a-f79c7bc61632/confirm-verification-stopped",
+      "body": {
+        "expectedRevision": 5,
+        "reason": "I have confirmed that the local verification commands and all their child processes have ended."
+      }
+    },
+    {
+      "path": "/api/workflow-runs/58de4e70-8089-4f1e-83fa-6b056389fcf3/automation",
+      "body": {
+        "expectedRevision": 1,
+        "autoAdvance": true,
+        "autoRepair": true,
+        "maxRepairRounds": 2
+      }
+    },
+    {
+      "path": "/api/automation-runs/9467aa02-b848-4b58-a5f2-9965000fb907/stop",
+      "body": {}
+    },
+    {
+      "path": "/api/workflow-runs/5366ca65-2a36-4882-b71a-3d126cd15860/automation",
+      "body": {
+        "expectedRevision": 1,
+        "autoAdvance": true,
+        "autoRepair": true,
+        "maxRepairRounds": 2
+      }
+    },
+    {
+      "path": "/api/automation-runs/31041a4e-3deb-4d43-8245-68a3eaa28988/stop",
+      "body": {}
+    },
+    {
+      "path": "/api/node-runs/66416f33-3482-42a6-9cc1-0b9dcec45c4b/repair",
+      "body": {
+        "expectedRevision": 5,
+        "maxRounds": 2
+      }
+    },
+    {
+      "path": "/api/repair-cycles/57efabaa-e1a5-4ea4-b142-112f9510de2f/stop",
+      "body": {}
+    }
+  ],
+  "errors": [],
+  "success": true
+}

@@ -1,0 +1,27 @@
+{
+  "date": "2026-10-27",
+  "scope": "agent-loop-optimization",
+  "baselineCommit": "3217d7517a301e6cb2a5654a2bca14c6b25c5429",
+  "coreTests": {
+    "command": "node scripts/toolchain.mjs test",
+    "tests": 287,
+    "passed": 287,
+    "failed": 0,
+    "skipped": 0,
+    "durationMs": 446429.2762
+  },
+  "dshTests": {
+    "command": "node scripts/toolchain.mjs dsh-test",
+    "tests": 22,
+    "passed": 22,
+    "failed": 0,
+    "skipped": 0
+  },
+  "typechecks": { "core": "passed", "dsh": "passed" },
+  "builds": { "core": "passed", "dsh": "passed", "warning": "Vite client chunk exceeds 500 kB; current chunk is approximately 554 kB minified." },
+  "browser": { "report": "report.json", "surfaces": 8, "widths": [1440, 390], "errors": 0 },
+  "diffCheck": "passed",
+  "paidModelCalls": 0,
+  "modelQualityEvaluation": "not performed; only the evaluation contract and fixture report were validated",
+  "review": "Codex subagent review completed; external Claude Code was not invoked"
+}

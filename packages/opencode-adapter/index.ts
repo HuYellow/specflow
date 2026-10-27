@@ -4,13 +4,14 @@ import { homedir } from 'node:os';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { DomainError, hash, type ExecutionRef, type ModelTarget } from '../domain/index.ts';
 import type { BackendCapabilities, ExecutionBackend, ExecutionSnapshot, ExecutionUpdate, FrozenInput } from '../execution-contract/index.ts';
+import { reportedSum, turnUsage, unknownTurnUsage } from '../execution-contract/measurements.ts';
 
 export interface OpenCodeOptions { baseUrl: string; username?: string; password?: string; stateDir: string; workspaceRoot: string; pollIntervalMs?: number }
 type Rule = { permission: string; pattern: string; action: 'allow' | 'deny' | 'ask' };
 type Message = { info: { id: string; sessionID: string; role: string; parentID?: string; finish?: string; error?: { name?: string; data?: { message?: string } }; time?: { completed?: number }; tokens?: { input?: number; output?: number }; cost?: number }; parts: { type: string; text?: string; state?: { status?: string; error?: string } }[] };
 type Permission = { id: string; sessionID: string; permission: string; patterns: string[]; metadata: Record<string, unknown>; tool?: { messageID: string } };
 type Question = { id: string; sessionID: string; questions: { question: string; options: { label: string; description: string }[]; multiple?: boolean; custom?: boolean }[]; tool?: { messageID: string } };
-type Journal = { version: 1; attemptId: string; inputHash: string; inputDigest: string; workspace: string; ref: ExecutionRef; readOnly: boolean; maxSteps: number; permission: Rule[]; dispatch: 'prepared' | 'intent' | 'accepted'; dispatchedAt?: number; stopRequested?: boolean; limitExceeded?: boolean; userDenied?: boolean; approvals: number; terminal?: ExecutionSnapshot };
+type Journal = { version: 1; attemptId: string; inputHash: string; inputDigest: string; workspace: string; ref: ExecutionRef; readOnly: boolean; maxSteps: number; permission: Rule[]; dispatch: 'prepared' | 'intent' | 'accepted'; dispatchedAt?: number; stopRequested?: boolean; stopRequestedAt?: string; limitExceeded?: boolean; userDenied?: boolean; approvals: number; terminal?: ExecutionSnapshot };
 const resumeReason = 'OpenCode HTTP API 没有原运行的安全恢复协议；可以重新核对原会话状态，继续执行需创建新尝试。';
 const limitation = 'OpenCode 步数采用会话轮询监测和工具授权预算，非原生硬上限；自动允许的读取及两次轮询之间可能继续执行。';
 const readOnlyBoundary = '只读执行依赖可信的用户级 OpenCode 工具与插件配置；HTTP API 无法辨认同名工具覆盖，用户级插件仍可能越过工具权限。工作区本地配置与扩展在激活前拒绝；工程阶段另有工作树变化检查阻塞异常写入。';
@@ -134,7 +135,13 @@ export class OpenCodeBackend implements ExecutionBackend {
       const health = await this.request('/global/health');
       if (health?.healthy !== true || typeof health.version !== 'string') throw new DomainError('OPENCODE_PROTOCOL_ERROR', 'OpenCode 健康检查响应无效', 503);
       await mkdir(this.options.workspaceRoot, { recursive: true }); await this.identity(await realpath(this.options.workspaceRoot));
-      return { available: true, version: health.version, rootId: this.rootId, canResume: false, canInteract: true, readOnlyReview: true, stepLimit: 'observed', reason: `${resumeReason} ${limitation} ${readOnlyBoundary}` };
+      return { available: true, version: health.version, rootId: this.rootId, canResume: false, canInteract: true, readOnlyReview: true, stepLimit: 'observed', stepUnit: 'observed-step', usageCompleteness: 'partial', details: {
+        sourceVersion: health.version,
+        stepLimit: { enforcement: 'observed', scope: 'turn', unit: 'observed-step' },
+        resume: { mode: 'reconcile-only', preservesStepBudget: false },
+        usage: { availability: 'terminal', cost: 'reported' },
+        readOnly: { enforcement: 'tool-allowlist', trustBoundary: readOnlyBoundary },
+      }, reason: `${resumeReason} ${limitation} ${readOnlyBoundary}` };
     } catch (error) { return { available: false, version: 'unknown', rootId: this.rootId, canResume: false, canInteract: false, readOnlyReview: false, stepLimit: 'observed', reason: (error as Error).message }; }
   }
   async listTargets(): Promise<ModelTarget[]> {
@@ -188,10 +195,14 @@ export class OpenCodeBackend implements ExecutionBackend {
       } catch (error) { return { state: 'unknown', ref, error: `${(error as Error).message}；派发意图已保存，不会自动重新发送。` }; }
     });
   }
-  private async terminal(journal: Journal, snapshot: ExecutionSnapshot) { journal.terminal = snapshot; await this.save(this.file(journal.ref), journal); this.unwatch(journal.ref); return snapshot; }
+  private async terminal(journal: Journal, snapshot: ExecutionSnapshot) {
+    snapshot.termination ??= { reason: journal.limitExceeded ? 'step_limit' : journal.userDenied ? 'permission_denied' : snapshot.state === 'completed' ? 'natural_completion' : snapshot.state === 'cancelled' && journal.stopRequested ? 'user_cancelled' : 'unknown', confirmed: !!snapshot.terminalEventId, ...(journal.stopRequestedAt ? { requestedAt: journal.stopRequestedAt } : {}), confirmedAt: new Date().toISOString() };
+    snapshot.usageMeasurement ??= unknownTurnUsage(snapshot.ref, snapshot.terminalEventId);
+    journal.terminal = snapshot; await this.save(this.file(journal.ref), journal); this.unwatch(journal.ref); return snapshot;
+  }
   private async queryJournal(journal: Journal): Promise<ExecutionSnapshot> {
     const { ref, workspace } = journal;
-    if (journal.terminal) return journal.terminal;
+    if (journal.terminal) return { ...journal.terminal, termination: journal.terminal.termination || { reason: 'unknown', confirmed: !!journal.terminal.terminalEventId }, usageMeasurement: journal.terminal.usageMeasurement || unknownTurnUsage(ref, journal.terminal.terminalEventId) };
     try {
       await this.identity(workspace);
       const session = await this.request(`/session/${encodeURIComponent(ref.sessionId)}`, workspace);
@@ -203,15 +214,17 @@ export class OpenCodeBackend implements ExecutionBackend {
       const ids = new Set(assistants.map(m => m.info.id));
       const last = assistants.at(-1); const active = ['busy', 'retry'].includes(status[ref.sessionId]?.type);
       const steps = assistants.reduce((sum, m) => sum + Math.max(1, m.parts.filter(p => p.type === 'step-start').length), 0);
-      if (steps > journal.maxSteps && !journal.limitExceeded) { journal.limitExceeded = true; journal.stopRequested = true; await this.save(this.file(ref), journal); await this.request(`/session/${encodeURIComponent(ref.sessionId)}/abort`, workspace, {}); }
+      if (steps > journal.maxSteps && !journal.limitExceeded) { journal.limitExceeded = true; journal.stopRequested = true; journal.stopRequestedAt ??= new Date().toISOString(); await this.save(this.file(ref), journal); await this.request(`/session/${encodeURIComponent(ref.sessionId)}/abort`, workspace, {}); }
+      const usageMeasurement = turnUsage(ref, { inputTokens: reportedSum(assistants.map(m => m.info.tokens?.input), true), outputTokens: reportedSum(assistants.map(m => m.info.tokens?.output), true), costUsd: reportedSum(assistants.map(m => m.info.cost)) });
+      const usage = usageMeasurement.inputTokens !== null && usageMeasurement.outputTokens !== null ? { inputTokens: usageMeasurement.inputTokens, outputTokens: usageMeasurement.outputTokens, costUsd: usageMeasurement.costUsd } : undefined;
       // Never infer success merely from an idle server: completion must belong to our exact message.
       if (!active && last?.info.time?.completed && last.info.error) {
         const aborted = last.info.error.name === 'MessageAbortedError';
-        return this.terminal(journal, { state: journal.limitExceeded ? 'failed' : aborted ? 'cancelled' : 'failed', ref, terminalEventId: `${last.info.id}:${last.info.time.completed}`, error: journal.limitExceeded ? 'OpenCode 观测步数超过阶段预算，已停止原会话' : last.info.error.data?.message || last.info.error.name || 'OpenCode 执行失败' });
+        return this.terminal(journal, { state: journal.limitExceeded ? 'failed' : aborted ? 'cancelled' : 'failed', ref, terminalEventId: `${last.info.id}:${last.info.time.completed}`, usage, usageMeasurement: { ...usageMeasurement, eventId: `${last.info.id}:${last.info.time.completed}`, sequence: last.info.time.completed }, error: journal.limitExceeded ? 'OpenCode 观测步数超过阶段预算，已停止原会话' : last.info.error.data?.message || last.info.error.name || 'OpenCode 执行失败' });
       }
       if (!active && last?.info.time?.completed && last.info.finish && !['tool-calls', 'unknown'].includes(last.info.finish)) {
         const output = last.parts.filter(p => p.type === 'text' && typeof p.text === 'string').map(p => p.text).join('');
-        return this.terminal(journal, { state: journal.limitExceeded ? 'failed' : 'completed', ref, terminalEventId: `${last.info.id}:${last.info.time.completed}`, output, ...(journal.limitExceeded ? { error: 'OpenCode 观测步数超过阶段预算' } : {}), usage: { inputTokens: assistants.reduce((sum, m) => sum + (m.info.tokens?.input || 0), 0), outputTokens: assistants.reduce((sum, m) => sum + (m.info.tokens?.output || 0), 0), costUsd: assistants.every(m => typeof m.info.cost === 'number') ? assistants.reduce((sum, m) => sum + m.info.cost!, 0) : null } });
+        return this.terminal(journal, { state: journal.limitExceeded ? 'failed' : 'completed', ref, terminalEventId: `${last.info.id}:${last.info.time.completed}`, output, ...(journal.limitExceeded ? { error: 'OpenCode 观测步数超过阶段预算' } : {}), usage, usageMeasurement: { ...usageMeasurement, eventId: `${last.info.id}:${last.info.time.completed}`, sequence: last.info.time.completed } });
       }
       const permissions: Permission[] = await this.request('/permission', workspace), questions: Question[] = await this.request('/question', workspace);
       if (!Array.isArray(permissions) || !Array.isArray(questions)) throw new DomainError('OPENCODE_PROTOCOL_ERROR', 'OpenCode 交互响应无效', 503);
@@ -227,12 +240,18 @@ export class OpenCodeBackend implements ExecutionBackend {
       // a second assistant message. Completed tool errors + idle are terminal failure
       // evidence, never a successful stage result.
       const toolErrors = last?.parts.filter(p => p.type === 'tool' && p.state?.status === 'error').map(p => p.state?.error || '工具调用失败') || [];
-      if (!active && last?.info.time?.completed && last.info.finish === 'tool-calls' && toolErrors.length) return this.terminal(journal, { state: journal.userDenied ? 'cancelled' : 'failed', ref, terminalEventId: `${last.info.id}:${last.info.time.completed}`, error: journal.userDenied ? '用户拒绝了 OpenCode 工具操作，原会话已终止' : `OpenCode 工具调用失败：${toolErrors.join('\n')}` });
+      if (!active && last?.info.time?.completed && last.info.finish === 'tool-calls' && toolErrors.length) return this.terminal(journal, { state: journal.userDenied ? 'cancelled' : 'failed', ref, terminalEventId: `${last.info.id}:${last.info.time.completed}`, usage, usageMeasurement: { ...usageMeasurement, eventId: `${last.info.id}:${last.info.time.completed}`, sequence: last.info.time.completed }, error: journal.userDenied ? '用户拒绝了 OpenCode 工具操作，原会话已终止' : `OpenCode 工具调用失败：${toolErrors.join('\n')}` });
       if (active || (journal.dispatch === 'accepted' && Date.now() - (journal.dispatchedAt || 0) < 2000)) return { state: 'running', ref };
       return { state: 'unknown', ref, error: journal.dispatch === 'prepared' ? 'OpenCode 会话已准备，阶段尚未派发' : 'OpenCode 会话空闲，但缺少绑定本次消息的终止凭据；不会自动重新发送或恢复' };
     } catch (error) { return { state: 'unknown', ref, error: (error as Error).message }; }
   }
-  async query(ref: ExecutionRef): Promise<ExecutionSnapshot> { return this.locked(ref.turnId, async () => this.queryJournal(await this.load(ref))); }
+  async query(ref: ExecutionRef): Promise<ExecutionSnapshot> {
+    return this.locked(ref.turnId, async () => {
+      const journal = await this.load(ref), snapshot = await this.queryJournal(journal);
+      if (!snapshot.termination && journal.stopRequested) snapshot.termination = { reason: journal.limitExceeded ? 'step_limit' : 'user_cancelled', confirmed: false, requestedAt: journal.stopRequestedAt };
+      return snapshot;
+    });
+  }
   async readResult(ref: ExecutionRef) { return this.query(ref); }
   async *observe(ref: ExecutionRef): AsyncIterable<ExecutionUpdate> {
     while (!this.closed) { const snapshot = await this.query(ref); yield { kind: ['completed', 'failed', 'cancelled'].includes(snapshot.state) ? 'terminal' : snapshot.state === 'waiting_interaction' ? 'interaction' : 'progress', snapshot }; if (!['running', 'waiting_interaction'].includes(snapshot.state)) return; await new Promise(done => setTimeout(done, Math.max(50, this.options.pollIntervalMs || 1000))); }
@@ -259,7 +278,7 @@ export class OpenCodeBackend implements ExecutionBackend {
     });
   }
   async stop(ref: ExecutionRef): Promise<void> {
-    return this.locked(ref.turnId, async () => { const journal = await this.load(ref); if (journal.terminal) return; await this.identity(journal.workspace); journal.stopRequested = true; await this.save(this.file(ref), journal); if (journal.dispatch === 'prepared') { await this.terminal(journal, { state: 'cancelled', ref, terminalEventId: `${ref.turnId}:not-dispatched` }); return; } await this.request(`/session/${encodeURIComponent(ref.sessionId)}/abort`, journal.workspace, {}); this.watch(ref); });
+    return this.locked(ref.turnId, async () => { const journal = await this.load(ref); if (journal.terminal) return; await this.identity(journal.workspace); journal.stopRequested = true; journal.stopRequestedAt ??= new Date().toISOString(); await this.save(this.file(ref), journal); if (journal.dispatch === 'prepared') { await this.terminal(journal, { state: 'cancelled', ref, terminalEventId: `${ref.turnId}:not-dispatched`, usageMeasurement: turnUsage(ref, { inputTokens: 0, outputTokens: 0, costUsd: 0 }, `${ref.turnId}:not-dispatched`) }); return; } await this.request(`/session/${encodeURIComponent(ref.sessionId)}/abort`, journal.workspace, {}); this.watch(ref); });
   }
   async planResume(ref: ExecutionRef) { await this.load(ref); return { possible: false, reason: resumeReason }; }
   async resume(ref: ExecutionRef, _plan: unknown): Promise<ExecutionRef> { await this.load(ref); throw new DomainError('RESUME_UNSUPPORTED', resumeReason, 409); }

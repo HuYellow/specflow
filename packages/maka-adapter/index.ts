@@ -4,6 +4,7 @@ import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { DomainError, hash, id, type ExecutionRef, type ModelTarget } from '../domain/index.ts';
 import type { BackendCapabilities, ExecutionBackend, ExecutionSnapshot, ExecutionUpdate, FrozenInput } from '../execution-contract/index.ts';
+import { unknownTurnUsage } from '../execution-contract/measurements.ts';
 import { applyWindowsCompatibility, MAKA_VERSION } from './compat.ts';
 import { MAKA_RELEASE, MAKA_RELEASE_AVAILABLE } from './release-policy.ts';
 
@@ -63,7 +64,13 @@ export class MakaBackend implements ExecutionBackend {
     if (receipt.convergence !== 'converged') throw new DomainError('PLUGIN_UNAVAILABLE', '工作空间工具扩展未就绪', 503);
   }
   async inspect(): Promise<BackendCapabilities> {
-    try { const host = await this.connect(); await host.status(); return { available: true, version: MAKA_VERSION, rootId: host.rootId, canResume: true, canInteract: true, readOnlyReview: true, stepLimit: 'native', reason: '使用 Host plan/explore 只读策略；真实供应商验收待连接配置' }; }
+    try { const host = await this.connect(); await host.status(); return { available: true, version: MAKA_VERSION, rootId: host.rootId, canResume: true, canInteract: true, readOnlyReview: true, stepLimit: 'native', stepUnit: 'runtime-step', maxInputBytes: MAKA_TURN_TEXT_MAX_BYTES, usageCompleteness: 'unknown', details: {
+      sourceVersion: MAKA_VERSION,
+      stepLimit: { enforcement: 'native', scope: 'turn', unit: 'runtime-step' },
+      resume: { mode: 'same-run', preservesStepBudget: false },
+      usage: { availability: 'none', cost: 'unknown' },
+      readOnly: { enforcement: 'host-policy', trustBoundary: 'Maka Host plan/explore policy and SpecFlow workspace tools; not an operating-system sandbox' },
+    }, reason: '使用 Host plan/explore 只读策略；真实供应商验收待连接配置；显式恢复的剩余步数保证未验证，不能承诺累计步数硬上限' }; }
     catch (error) { return { available: false, version: MAKA_VERSION, canResume: false, canInteract: false, readOnlyReview: false, reason: (error as Error).message }; }
   }
   async listTargets(): Promise<ModelTarget[]> {
@@ -86,6 +93,7 @@ export class MakaBackend implements ExecutionBackend {
   async prepare(input: FrozenInput): Promise<ExecutionRef> {
     assertPromptSize(input.prompt);
     const host = await this.connect();
+    if (input.target.rootId && input.target.rootId !== host.rootId) throw new DomainError('BACKEND_IDENTITY_CHANGED', '模型目标属于其他 Maka Host，不能替换原尝试的执行身份', 409);
     const sessionId = input.attemptId, turnId = id();
     await host.request('session.create', { sessionId, workspace: { kind: 'host_path', path: input.workspace },
       name: `SpecFlow ${input.attemptId.slice(0, 8)}`, modelTarget: { kind: 'explicit', connectionId: input.target.connectionId, connectionSlug: input.target.connectionSlug, model: input.target.model },
@@ -111,9 +119,12 @@ export class MakaBackend implements ExecutionBackend {
         try { interactions = subscription.snapshot.interactions.pending.map((i: any) => ({ id: i.interactionId, request: i.request })); }
         finally { await subscription.close(); }
       }
+      const terminal = ['completed', 'failed', 'cancelled'].includes(turn.status);
+      const reason = turn.failureClass === 'tool_step_cap_reached' ? 'step_limit' : turn.status === 'completed' ? 'natural_completion' : turn.abortSource === 'user_stop' ? 'user_cancelled' : turn.failureClass === 'provider_error' ? 'provider_error' : 'unknown';
       return { state: ['completed', 'failed', 'cancelled', 'waiting_for_user'].includes(turn.status) ? (turn.status === 'waiting_for_user' ? 'waiting_interaction' : turn.status) : 'running',
-        ref: { ...ref, runId: turn.runId || ref.runId }, terminalEventId: turn.terminalEventId, error: turn.failureMessage || turn.error, interactions };
-    } catch (error) { return { state: 'unknown', ref, error: (error as Error).message }; }
+        ref: { ...ref, runId: turn.runId || ref.runId }, terminalEventId: turn.terminalEventId, error: turn.failureMessage || turn.error, interactions,
+        ...(terminal ? { termination: { reason, confirmed: typeof turn.terminalEventId === 'string' && !!turn.terminalEventId }, usageMeasurement: unknownTurnUsage(ref, turn.terminalEventId) } : {}) };
+    } catch (error) { return { state: 'unknown', ref, error: (error as Error).message, termination: { reason: 'unknown', confirmed: false } }; }
   }
   async *observe(ref: ExecutionRef): AsyncIterable<ExecutionUpdate> {
     while (true) { const snapshot = await this.query(ref); yield { kind: ['completed', 'failed', 'cancelled'].includes(snapshot.state) ? 'terminal' : 'progress', snapshot };

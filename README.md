@@ -252,6 +252,9 @@ Most detailed implementation notes are currently in Chinese.
 | Runtime integration | [Execution backends](docs/implementation/execution-backends.md) · [Maka management](docs/implementation/maka-runtime-management.md) |
 | Inputs & clarification | [Requirements](docs/implementation/requirements-input.md) · [Project guidance](docs/implementation/constitution-clarify.md) |
 | Documents & review | [Reading briefs](docs/implementation/dual-audience-documents.md) · [Review policy](docs/implementation/self-correction.md) |
+| Execution control & automatic repair | [Policies, recovery and bounded repair](docs/implementation/agent-loop-optimization.md) · [UI validation](docs/implementation/agent-loop-qa/README.md) · [Evaluation tools](docs/implementation/agent-evaluation.md) |
+
+Automatic advancement and bounded repair are opt-in from the workflow view. Required clarification, tool permissions, independent review and human acceptance still apply. Execution details preserve deadlines, original backend identities and unknown usage rather than treating missing measurements as zero.
 
 ---
 

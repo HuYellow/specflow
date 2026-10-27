@@ -17,7 +17,7 @@ export interface SpecflowReadRequest {
   id?: string;
   after?: number;
 }
-export const commandOperations = ['registerProject', 'configureProject', 'createWorkItem', 'saveRequirements', 'createRun', 'startNode', 'stopAttempt', 'reconcileAttempt', 'resumeAttempt', 'answerInteraction', 'answerClarification', 'saveClarificationDraft', 'restartClarification', 'editArtifact', 'acceptArtifact', 'verifyCandidate', 'acceptCode', 'resolveFinding'] as const;
+export const commandOperations = ['registerProject', 'configureProject', 'createWorkItem', 'saveRequirements', 'createRun', 'startNode', 'startRepair', 'stopRepair', 'startAutomation', 'stopAutomation', 'stopVerification', 'confirmVerificationStopped', 'confirmNodeVerificationStopped', 'stopAttempt', 'reconcileAttempt', 'resumeAttempt', 'answerInteraction', 'answerClarification', 'saveClarificationDraft', 'restartClarification', 'editArtifact', 'acceptArtifact', 'verifyCandidate', 'acceptCode', 'resolveFinding'] as const;
 export type CommandOperation = typeof commandOperations[number];
 export interface SpecflowCommandRequest {
   locale?: Locale;

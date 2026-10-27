@@ -82,6 +82,7 @@ test('OpenCode URL 仅接受 loopback 根地址，不含凭据或重定向入口
 test('OpenCode 检查能力、目录模型和 Basic Auth；秘密不写入 journal', async t => {
   const f = await fixture(t), capabilities = await f.backend.inspect(), targets = await f.backend.listTargets();
   assert.equal(capabilities.available, true); assert.equal(capabilities.canResume, false); assert.equal(capabilities.readOnlyReview, true); assert.equal(capabilities.stepLimit, 'observed'); assert.match(capabilities.reason!, /非原生硬上限/);
+  assert.equal(capabilities.details?.stepLimit.enforcement, 'observed'); assert.equal(capabilities.details?.resume.mode, 'reconcile-only'); assert.equal(capabilities.details?.resume.preservesStepBudget, false);
   assert.match(capabilities.reason!, /可信的用户级/); assert.match(capabilities.reason!, /同名工具覆盖/);
   assert.equal(targets.length, 1); assert.equal(targets[0].connectionId, 'local'); assert.equal(targets[0].model, 'fixture-model');
   assert.ok(f.calls.every(c => c.authorization === `Basic ${Buffer.from('local-user:secret-that-must-not-be-persisted').toString('base64')}`));
@@ -112,6 +113,8 @@ test('OpenCode start 立即异步派发，完整读取绑定本条消息的终�
   assert.equal((await f.backend.query(ref)).state, 'running');
   const output = `{"summary":"${'完整产物'.repeat(30000)}","artifacts":[]}`; f.finish(ref, output);
   const result = await f.backend.readResult(ref); assert.equal(result.state, 'completed'); assert.ok(result.output === output, '完整多段产物应保持字节内容，不能截断或插入换行'); assert.ok(result.terminalEventId); assert.deepEqual(result.usage, { inputTokens: 30, outputTokens: 20, costUsd: 0.02 });
+  assert.equal(result.termination?.reason, 'natural_completion'); assert.equal(result.termination?.confirmed, true);
+  assert.equal(result.usageMeasurement?.completeness, 'complete'); assert.equal(result.usageMeasurement?.scope, 'turn'); assert.equal(result.usageMeasurement?.mode, 'cumulative'); assert.equal(result.usageMeasurement?.costUsd, 0.02);
   await f.backend.close(); const restored = f.connect(); assert.deepEqual(await restored.readResult(ref), result);
   assert.equal((await restored.start(ref, input)).state, 'completed'); assert.equal(f.dispatches, 1);
 });
@@ -213,6 +216,7 @@ test('OpenCode stop 要求绑定消息的终止凭据，单独 abort receipt 加
   assert.equal((await f.backend.query(ref)).state, 'cancelled');
   const secondInput = f.input({ attemptId: 'no-terminal' }), second = await f.backend.prepare(secondInput); await f.backend.start(second, secondInput); f.abortWritesTerminal = false; await f.backend.stop(second);
   const result = await f.backend.query(second); assert.notEqual(result.state, 'cancelled'); assert.notEqual(result.state, 'completed');
+  assert.equal(result.termination?.confirmed, false); assert.ok(result.termination?.requestedAt);
   const preparedInput = f.input({ attemptId: 'cancel-before-start' }), prepared = await f.backend.prepare(preparedInput); await f.backend.stop(prepared);
   const dispatches = f.dispatches; assert.equal((await f.backend.start(prepared, preparedInput)).state, 'cancelled'); assert.equal(f.dispatches, dispatches);
 });
@@ -221,6 +225,7 @@ test('OpenCode 观测步数超限停止原会话且标失败，工具授权预�
   const f = await fixture(t), input = f.input({ maxSteps: 1 }), ref = await f.backend.prepare(input); await f.backend.start(ref, input);
   f.messages.get(ref.sessionId)!.push(...[1, 2].map(n => ({ info: { id: `msg_step${n}`, role: 'assistant', parentID: ref.turnId, sessionID: ref.sessionId }, parts: [{ type: 'step-start' }] })));
   await f.backend.query(ref); const stopped = await f.backend.query(ref); assert.equal(stopped.state, 'failed'); assert.match(stopped.error!, /步数超过/); assert.ok(f.calls.some(c => c.path.endsWith('/abort')));
+  assert.equal(stopped.termination?.reason, 'step_limit'); assert.equal(stopped.termination?.confirmed, true);
   const nextInput = f.input({ attemptId: 'approval-budget', maxSteps: 1 }), next = await f.backend.prepare(nextInput); await f.backend.start(next, nextInput);
   const permission = (id: string) => ({ id, sessionID: next.sessionId, permission: 'bash', patterns: ['echo'], metadata: {} });
   f.permissions.push(permission('per_one')); await f.backend.answer(next, 'permission:per_one', { kind: 'permission', decision: 'allow' });
@@ -239,4 +244,18 @@ test('OpenCode 数据目录身份变更、篡改引用、服务替换均拒绝�
 test('OpenCode 不跟随本机重定向，服务端错误不泄露凭据', async t => {
   const f = await fixture(t); f.redirect = '/global/health'; const result = await f.backend.inspect();
   assert.equal(result.available, false); assert.match(result.reason!, /重定向/); assert.ok(!result.reason!.includes(f.options.password));
+});
+
+test('OpenCode missing or malformed usage remains unknown and never becomes a zero bill', async t => {
+  const f = await fixture(t);
+  for (const [index, tokens] of [undefined, { input: -1, output: 20 }, { input: 1.5, output: 20 }, { output: 20 }].entries()) {
+    const input = f.input({ attemptId: `missing-usage-${index}` }), ref = await f.backend.prepare(input); await f.backend.start(ref, input);
+    f.finish(ref, '{"summary":"done","artifacts":[]}', { tokens, cost: undefined });
+    const result = await f.backend.readResult(ref);
+    assert.equal(result.usage, undefined);
+    assert.equal(result.usageMeasurement?.inputTokens, null);
+    assert.equal(result.usageMeasurement?.costUsd, null);
+    assert.equal(result.usageMeasurement?.completeness, tokens ? 'partial' : 'unknown');
+    assert.deepEqual((await f.connect().readResult(ref)).usageMeasurement, result.usageMeasurement);
+  }
 });

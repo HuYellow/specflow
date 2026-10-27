@@ -109,6 +109,25 @@ export class SpecflowApi {
         return this.service.startNode(id(), body.expectedRevision, body.target);
       }
       case 'stopAttempt': empty.parse(input); return this.service.stopAttempt(id());
+      case 'stopVerification': empty.parse(input); return this.service.stopVerification(id());
+      case 'confirmVerificationStopped': {
+        const body = z.object({ expectedRevision: revision, reason: z.string().trim().min(1).max(4000) }).strict().parse(input);
+        return this.service.confirmVerificationStopped(id(), body.expectedRevision, body.reason);
+      }
+      case 'confirmNodeVerificationStopped': {
+        const body = z.object({ expectedRevision: revision, reason: z.string().trim().min(1).max(4000) }).strict().parse(input);
+        return this.service.confirmNodeVerificationStopped(id(), body.expectedRevision, body.reason);
+      }
+      case 'startRepair': {
+        const body = z.object({ expectedRevision: revision, maxRounds: z.number().int().min(1).max(10).optional(), mode: z.enum(['code', 'output']).optional() }).strict().parse(input);
+        return this.service.automation.startRepair(id(), body.expectedRevision, { maxRounds: body.maxRounds, mode: body.mode });
+      }
+      case 'stopRepair': empty.parse(input); return this.service.automation.stopRepair(id());
+      case 'startAutomation': {
+        const body = z.object({ expectedRevision: revision, autoAdvance: z.boolean(), autoRepair: z.boolean(), maxRepairRounds: z.number().int().min(1).max(10) }).strict().parse(input);
+        return this.service.automation.startAutomation(id(), body.expectedRevision, { autoAdvance: body.autoAdvance, autoRepair: body.autoRepair, maxRepairRounds: body.maxRepairRounds });
+      }
+      case 'stopAutomation': empty.parse(input); return this.service.automation.stopAutomation(id());
       case 'reconcileAttempt': empty.parse(input); await this.service.reconcile(id()); return this.service.store.get('attempts', id());
       case 'resumeAttempt': empty.parse(input); return this.service.resumeAttempt(id());
       case 'answerInteraction': {

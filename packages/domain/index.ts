@@ -1,6 +1,12 @@
 import { translate, type Locale } from '../i18n/index.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import type { ReviewContext, ReviewReport } from '../review-policy/index.ts';
+import type { ContextManifest, DispatchIntent, ExecutionPolicy, ExecutionPolicyOptions, ExecutionStopReason, TaskSpec, UsageRecord, UsageSummary } from './execution.ts';
+import type { AutomationRun, AutomationSettings, CandidateSnapshotOperation, RepairCycle } from './automation.ts';
+import { validatePolicyOptions } from '../specflow-core/execution-policy.ts';
+export type * from './execution.ts';
+export type * from './automation.ts';
+export { parseTasks } from '../specflow-core/task-spec.ts';
 
 export const id = () => randomUUID();
 export const hash = (value: string) => createHash('sha256').update(value).digest('hex');
@@ -46,6 +52,43 @@ export interface Interaction extends Entity { attemptId: string; ref: ExecutionR
 export interface FileOperation extends Entity { artifactId: string; revisionId: string; targetPath: string; previousHash: string | null; nextHash: string; state: 'prepared' | 'written' | 'committed' | 'conflict'; actor: string; reason: string }
 export interface CodeOperation extends Entity { candidateId: string; targetCommit: string; resultCommit?: string; state: 'prepared' | 'integrated' | 'committed' | 'conflict' }
 export interface Entities { projects: Project; workItems: WorkItem; requirementRevisions: RequirementRevision; clarifications: ClarificationSession; clarificationDrafts: ClarificationDraft; workflows: Workflow; runs: WorkflowRun; nodes: NodeRun; attempts: Attempt; bindings: ExecutionBinding; artifacts: Artifact; artifactRevisions: ArtifactRevision; findings: Finding; decisions: Decision; comments: Comment; candidates: Candidate; evidence: Evidence; tasks: TaskRun; interactions: Interaction; fileOperations: FileOperation; codeOperations: CodeOperation }
+// Optional fields keep historical JSON records readable without inventing past execution facts.
+export interface WorkflowNode { executionPolicy?: ExecutionPolicyOptions }
+export interface WorkflowDefinition { executionPolicy?: ExecutionPolicyOptions }
+export interface WorkflowRun { policy?: ExecutionPolicy; automation?: AutomationSettings }
+export interface NodeRun { verificationStartedAt?: string; verificationDeadlineAt?: string; verificationStopRequestedAt?: string; verificationUnconfirmed?: boolean; automationRunId?: string; repairCycleId?: string }
+export interface Attempt {
+  errorCode?: string;
+  policy?: ExecutionPolicy;
+  contextManifest?: ContextManifest;
+  deadlineAt?: string;
+  stopRequestedAt?: string;
+  stopReason?: ExecutionStopReason;
+  terminalConfirmedAt?: string;
+  usageSummary?: UsageSummary;
+  reconcileAttempts?: number;
+  reconcileNextAt?: string;
+  controlError?: string;
+  writeOccupancy?: 'held' | 'released';
+  verificationPending?: boolean;
+  repairCycleId?: string;
+  repairRound?: number;
+  repairMode?: 'code' | 'output';
+  automationRunId?: string;
+}
+export interface Candidate {
+  seedCommit?: string;
+  parentCandidateId?: string;
+  parentCodeHash?: string;
+  repairCycleId?: string;
+  repairRound?: number;
+  activation?: 'preparing' | 'active' | 'conflict';
+  snapshotOperationId?: string;
+}
+export interface ExecutionBinding { dispatchIntentId?: string; contextManifest?: ContextManifest; inputHash?: string }
+export interface TaskRun { spec?: TaskSpec; taskSpecHash?: string; entryCodeHash?: string; evidenceIds?: string[]; output?: string; inheritedFromTaskId?: string }
+export interface Evidence { cancelled?: boolean; timedOut?: boolean; terminationReason?: string; terminationConfirmed?: boolean; stdoutBytes?: number; stderrBytes?: number; stdoutTruncated?: boolean; stderrTruncated?: boolean }
+export interface Entities { usageRecords: UsageRecord; dispatchIntents: DispatchIntent; repairCycles: RepairCycle; automationRuns: AutomationRun; candidateSnapshotOperations: CandidateSnapshotOperation }
 export type Kind = keyof Entities;
 export class DomainError extends Error {
   constructor(public code: string, message: string, public status = 409, public details?: unknown) { super(message); this.name = 'DomainError'; }
@@ -78,9 +121,11 @@ export function reviewSubjects(node: WorkflowNode) { return node.inputs.filter(i
 
 export function compileWorkflow(def: WorkflowDefinition, existing: string[] = []) {
   const errors: { nodeId: string; code: string; message: string }[] = [];
+  for (const message of validatePolicyOptions(def.executionPolicy || {})) errors.push({ nodeId: '', code: 'POLICY_INVALID', message });
   const ids = new Set<string>(), produced = new Set(existing);
   for (let index = 0; index < def.nodes.length; index++) {
     const node = def.nodes[index];
+    for (const message of [...validatePolicyOptions(node.executionPolicy || {}), ...validatePolicyOptions({ maxSteps: node.maxSteps, timeoutMs: node.timeoutMs })]) errors.push({ nodeId: node.id, code: 'POLICY_INVALID', message });
     if (ids.has(node.id)) errors.push({ nodeId: node.id, code: 'DUPLICATE_NODE', message: '节点 ID 重复' });
     ids.add(node.id);
     for (const input of node.inputs) if (!produced.has(input.split('@')[0])) errors.push({ nodeId: node.id, code: 'INPUT_MISSING', message: `上游未提供 ${input}` });
@@ -104,24 +149,4 @@ export function compileWorkflow(def: WorkflowDefinition, existing: string[] = []
   }
   if (def.requiredVerification.length && !def.nodes.some(x => x.type === 'verify')) errors.push({ nodeId: '', code: 'VERIFY_MISSING', message: '流程缺少必需验证节点' });
   return { valid: errors.length === 0, errors };
-}
-
-export function parseTasks(content: string) {
-  const tasks = content.split('\n').flatMap(line => {
-    const match = line.match(/^\s*- \[[ x]\]\s+(T\d+)\s+(.+)$/i);
-    if (!match) return [];
-    const dependencies = [...match[2].matchAll(/\bT\d+\b/g)].map(x => x[0]);
-    assert(!dependencies.includes(match[1]), 'TASKS_INVALID', '任务不能依赖自身');
-    return [{ taskId: match[1], name: match[2], dependsOn: dependencies, condition: match[2] }];
-  });
-  assert(tasks.length, 'TASKS_INVALID', '任务文档需要 - [ ] T001 形式的任务和验收条件');
-  const ids = new Set(tasks.map(x => x.taskId));
-  assert(ids.size === tasks.length, 'TASKS_INVALID', '任务 ID 必须唯一');
-  const visited = new Set<string>();
-  while (visited.size < tasks.length) {
-    const next = tasks.find(t => !visited.has(t.taskId) && t.dependsOn.every(d => visited.has(d)));
-    assert(next, 'TASKS_INVALID', '任务依赖缺失或形成环');
-    visited.add(next.taskId);
-  }
-  return tasks;
 }

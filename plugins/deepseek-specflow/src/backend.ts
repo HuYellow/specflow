@@ -5,6 +5,7 @@ import { mkdir, open, readFile, readdir, realpath, rename, writeFile, type FileH
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { DomainError, hash, type ExecutionRef, type ModelTarget } from '../../../packages/domain/index.ts';
 import type { BackendCapabilities, ExecutionBackend, ExecutionSnapshot, ExecutionUpdate, FrozenInput } from '../../../packages/execution-contract/index.ts';
+import { reportedSum, turnUsage, unknownTurnUsage } from '../../../packages/execution-contract/measurements.ts';
 
 /** The public DSH 0.2.1-rc.2 service APIs used by this adapter, kept structural
  * so the shared core and its tests do not load a second copy of the host SDK. */
@@ -24,7 +25,7 @@ interface DshAgentHandle { agent: DshAgent; dispose(): Promise<void> }
 interface DshEvent { type: string; seq: number; data: any }
 interface DshTool { name: string; description: string; parameters: Record<string, unknown>; output: { schema: { type: 'string' }; render(args: unknown, value: string): { type: 'text'; text: string }[] }; execute(args: unknown, exec: { signal: AbortSignal }): Promise<string>; isConcurrencySafe(): boolean }
 export interface DshBackendOptions { context: DshHostContext; stateDir: string; workspaceRoot: string; instanceId: string; version?: string; pollIntervalMs?: number }
-interface Journal { version: 1; ref: ExecutionRef; attemptId: string; digest: string; workspace: string; readOnly: boolean; maxSteps: number; target: ModelTarget; dispatch: 'prepared' | 'intent' | 'accepted'; stopRequested?: boolean; limitExceeded?: boolean; terminal?: ExecutionSnapshot }
+interface Journal { version: 1; ref: ExecutionRef; attemptId: string; digest: string; workspace: string; readOnly: boolean; maxSteps: number; target: ModelTarget; dispatch: 'prepared' | 'intent' | 'accepted'; stopRequested?: boolean; stopRequestedAt?: string; limitExceeded?: boolean; terminal?: ExecutionSnapshot }
 const resumeReason = 'DSH 不支持继续原来的中断 turn；重启后只核对持久会话，不自动恢复或重复派发。';
 const maxFileBytes = 1024 * 1024;
 const samePath = (a: string, b: string) => process.platform === 'win32' ? resolve(a).toLowerCase() === resolve(b).toLowerCase() : resolve(a) === resolve(b);
@@ -85,7 +86,14 @@ export class DshBackend implements ExecutionBackend {
     return journal;
   }
   async inspect(): Promise<BackendCapabilities> {
-    const base = { version: this.options.version || '0.2.1-rc.2', rootId: this.rootId, canResume: false, canInteract: false, stepLimit: 'native' as const };
+    const version = this.options.version || '0.2.1-rc.2';
+    const base: Omit<BackendCapabilities, 'available' | 'readOnlyReview'> = { version, rootId: this.rootId, canResume: false, canInteract: false, stepLimit: 'native', stepUnit: 'host-step', usageCompleteness: 'partial', details: {
+      sourceVersion: version,
+      stepLimit: { enforcement: 'native', scope: 'turn', unit: 'host-step' },
+      resume: { mode: 'reconcile-only', preservesStepBudget: false },
+      usage: { availability: 'terminal', cost: 'unknown' },
+      readOnly: { enforcement: 'tool-allowlist', trustBoundary: 'DSH scoped Specflow tools with monotonic guard; no shell or subagents; not an operating-system sandbox' },
+    } };
     try {
       const ctx = this.options.context;
       if (!ctx.agents?.create || !ctx.llm?.listProviders || !ctx.llm?.listModels || !ctx.sessions?.flush || !ctx.sessionPersistence?.open) throw new Error('DSH 缺少 agents、llm、sessions 或 sessionPersistence 服务');
@@ -138,7 +146,7 @@ export class DshBackend implements ExecutionBackend {
         // Agent creation awaits host setup. Plugin unload may have started
         // during that await; never release a prompt after close() began.
         if (this.closed) {
-          journal.terminal = { state: 'cancelled', ref, terminalEventId: `${ref.sessionId}:closed-before-dispatch` };
+          journal.terminal = { state: 'cancelled', ref, terminalEventId: `${ref.sessionId}:closed-before-dispatch`, termination: { reason: 'unknown', confirmed: true, confirmedAt: new Date().toISOString() }, usageMeasurement: turnUsage(ref, { inputTokens: 0, outputTokens: 0, costUsd: 0 }, `${ref.sessionId}:closed-before-dispatch`) };
           await this.save(this.file(ref), journal); await handle.dispose(); this.handles.delete(ref.sessionId);
           return journal.terminal;
         }
@@ -170,7 +178,7 @@ export class DshBackend implements ExecutionBackend {
     ctx.on('agent/pre-step', async ({ agent: subject }, next) => {
       if (subject !== agent) return next();
       if (admittedSteps >= journal.maxSteps) {
-        await this.locked(journal.ref.sessionId, async () => { const current = await this.load(journal.ref); current.limitExceeded = true; await this.save(this.file(journal.ref), current); });
+        await this.locked(journal.ref.sessionId, async () => { const current = await this.load(journal.ref); current.limitExceeded = true; current.stopRequested = true; current.stopRequestedAt ??= new Date().toISOString(); await this.save(this.file(journal.ref), current); });
         agent.cancel({ kind: 'hook', reason: 'Specflow maxSteps exceeded' });
         return { kind: 'reject' };
       }
@@ -198,7 +206,7 @@ export class DshBackend implements ExecutionBackend {
     } finally { await reader.close(); }
   }
   private async queryUnlocked(ref: ExecutionRef, journal: Journal): Promise<ExecutionSnapshot> {
-    if (journal.terminal) return journal.terminal;
+    if (journal.terminal) return { ...journal.terminal, termination: journal.terminal.termination || { reason: 'unknown', confirmed: !!journal.terminal.terminalEventId }, usageMeasurement: journal.terminal.usageMeasurement || unknownTurnUsage(ref, journal.terminal.terminalEventId) };
     if (journal.dispatch === 'prepared') return { state: 'unknown', ref, error: 'DSH 尝试尚未派发。' };
     let events: readonly DshEvent[];
     try { events = await this.events(journal); }
@@ -215,7 +223,9 @@ export class DshBackend implements ExecutionBackend {
     const messages = tail.filter(event => event.type === 'assistant/message' && event.data.turn === turn);
     const final = messages.findLast(event => !event.data.interrupted);
     const output = final?.data.message?.content?.filter((block: any) => block.type === 'text').map((block: any) => block.text).join('') || '';
-    const usage = messages.reduce((total, event) => ({ inputTokens: total.inputTokens + (event.data.usage?.inputTokens || 0) + (event.data.usage?.cacheReadTokens || 0) + (event.data.usage?.cacheWriteTokens || 0), outputTokens: total.outputTokens + (event.data.usage?.outputTokens || 0) }), { inputTokens: 0, outputTokens: 0 });
+    const terminalEventId = `${ref.sessionId}:${end.seq}`;
+    const usageMeasurement = turnUsage(ref, { inputTokens: reportedSum(messages.map(event => reportedSum([event.data.usage?.inputTokens, event.data.usage?.cacheReadTokens ?? 0, event.data.usage?.cacheWriteTokens ?? 0], true)), true), outputTokens: reportedSum(messages.map(event => event.data.usage?.outputTokens), true), costUsd: null }, terminalEventId, end.seq);
+    const usage = usageMeasurement.inputTokens !== null && usageMeasurement.outputTokens !== null ? { inputTokens: usageMeasurement.inputTokens, outputTokens: usageMeasurement.outputTokens, costUsd: null } : undefined;
     const reason = end.data.reason;
     let state: ExecutionSnapshot['state'] = 'failed', error: string | undefined;
     if (journal.limitExceeded) error = `DSH 执行达到最大 ${journal.maxSteps} 步，已停止。`;
@@ -223,11 +233,17 @@ export class DshBackend implements ExecutionBackend {
     else if (reason?.kind === 'aborted' && (journal.stopRequested || reason.reason?.kind === 'user')) state = 'cancelled';
     else if (reason?.kind === 'interrupted' || reason?.kind === 'forked' || (reason?.kind === 'aborted' && reason.reason?.kind === 'disposed')) return { state: 'unknown', ref, error: '原 DSH turn 被宿主中断；保留原身份，需人工核对后创建新尝试。' };
     else error = reason?.error?.message || `DSH turn 未成功完成（${reason?.kind || 'unknown'}）。`;
-    const snapshot: ExecutionSnapshot = { state, ref, terminalEventId: `${ref.sessionId}:${end.seq}`, output, ...(error ? { error } : {}), usage: { ...usage, costUsd: null } };
+    const snapshot: ExecutionSnapshot = { state, ref, terminalEventId, output, ...(error ? { error } : {}), usage, usageMeasurement, termination: { reason: journal.limitExceeded ? 'step_limit' : reason?.kind === 'completed' ? 'natural_completion' : state === 'cancelled' ? 'user_cancelled' : 'unknown', confirmed: true, ...(journal.stopRequestedAt ? { requestedAt: journal.stopRequestedAt } : {}), confirmedAt: new Date().toISOString() } };
     journal.terminal = snapshot; await this.save(this.file(ref), journal);
     return snapshot;
   }
-  async query(ref: ExecutionRef): Promise<ExecutionSnapshot> { return this.locked(ref.sessionId, async () => this.queryUnlocked(ref, await this.load(ref))); }
+  async query(ref: ExecutionRef): Promise<ExecutionSnapshot> {
+    return this.locked(ref.sessionId, async () => {
+      const journal = await this.load(ref), snapshot = await this.queryUnlocked(ref, journal);
+      if (!snapshot.termination && journal.stopRequested) snapshot.termination = { reason: journal.limitExceeded ? 'step_limit' : 'user_cancelled', confirmed: false, requestedAt: journal.stopRequestedAt };
+      return snapshot;
+    });
+  }
   async *observe(ref: ExecutionRef): AsyncIterable<ExecutionUpdate> {
     let previous = '';
     while (!this.closed) {
@@ -242,9 +258,9 @@ export class DshBackend implements ExecutionBackend {
     let handle: DshAgentHandle | undefined;
     await this.locked(ref.sessionId, async () => {
       const journal = await this.load(ref); if (journal.terminal) return;
-      journal.stopRequested = true; await this.save(this.file(ref), journal);
+      journal.stopRequested = true; journal.stopRequestedAt ??= new Date().toISOString(); await this.save(this.file(ref), journal);
       if (journal.dispatch === 'prepared') {
-        journal.terminal = { state: 'cancelled', ref, terminalEventId: `${ref.sessionId}:cancel-before-dispatch` };
+        journal.terminal = { state: 'cancelled', ref, terminalEventId: `${ref.sessionId}:cancel-before-dispatch`, termination: { reason: 'user_cancelled', confirmed: true, requestedAt: journal.stopRequestedAt, confirmedAt: new Date().toISOString() }, usageMeasurement: turnUsage(ref, { inputTokens: 0, outputTokens: 0, costUsd: 0 }, `${ref.sessionId}:cancel-before-dispatch`) };
         await this.save(this.file(ref), journal); return;
       }
       handle = this.handles.get(ref.sessionId);

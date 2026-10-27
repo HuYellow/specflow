@@ -1,5 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
-import { mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { DomainError, id, now, type Entities, type Entity, type Kind } from '../domain/index.ts';
 
@@ -7,14 +7,22 @@ export class Store {
   readonly db: DatabaseSync;
   private depth = 0;
   constructor(path: string) {
+    const existed = path !== ':memory:' && existsSync(path);
     if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
     this.db = new DatabaseSync(path);
+    const version = (this.db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version;
+    if (existed && version < 2 && this.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='entities'").get()) {
+      // Preserve a consistent pre-upgrade copy before writing new control records.
+      const backup = `${path}.before-agent-loops-v2-${Date.now()}-${id().slice(0, 8)}.sqlite`;
+      this.db.prepare('VACUUM INTO ?').run(backup);
+    }
     this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;
       CREATE TABLE IF NOT EXISTS entities(kind TEXT NOT NULL,id TEXT NOT NULL,revision INTEGER NOT NULL,data TEXT NOT NULL,PRIMARY KEY(kind,id));
       CREATE TABLE IF NOT EXISTS events(seq INTEGER PRIMARY KEY AUTOINCREMENT,entityId TEXT NOT NULL,kind TEXT NOT NULL,payload TEXT NOT NULL,createdAt TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS requests(key TEXT PRIMARY KEY,operation TEXT NOT NULL,result TEXT NOT NULL);`);
     const columns = this.db.prepare('PRAGMA table_info(events)').all() as { name: string }[];
     for (const name of ['workItemId', 'projectId']) if (!columns.some(column => column.name === name)) this.db.exec(`ALTER TABLE events ADD COLUMN ${name} TEXT`);
+    if (version < 2) this.db.exec('PRAGMA user_version=2');
   }
   create<K extends Kind>(kind: K, data: Omit<Entities[K], keyof Entity>): Entities[K] {
     const item = { ...data, id: id(), revision: 1, createdAt: now(), updatedAt: now() } as Entities[K];

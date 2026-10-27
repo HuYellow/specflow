@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "sourceKind": "fixture",
+  "baselineVariant": "baseline",
+  "trials": [
+    {
+      "trialId": "fixture-baseline-pass", "taskId": "csv-empty", "taskVersion": "fixture-task-v1", "variant": "baseline",
+      "provenance": { "specflowVersion": "fixture-before", "harness": { "id": "sandbox", "version": "fixture-v1" }, "model": { "provider": "fixture", "id": "no-real-model" }, "policyHash": "fixture-policy" },
+      "status": "completed", "resultHash": "fixture-result-1", "oracle": { "taskVersion": "fixture-task-v1", "kind": "deterministic", "independent": true, "verdict": "pass", "resultHash": "fixture-result-1", "evidenceRefs": ["fixture:held-out-test-1"] },
+      "reviewVerdict": "pass", "durationMs": 100, "usage": { "modelCalls": 1, "inputTokens": 10, "outputTokens": 5, "costUsd": 0.1 }, "humanInterventions": 0
+    },
+    {
+      "trialId": "fixture-baseline-fail", "taskId": "csv-empty", "taskVersion": "fixture-task-v1", "variant": "baseline",
+      "provenance": { "specflowVersion": "fixture-before", "harness": { "id": "sandbox", "version": "fixture-v1" }, "model": { "provider": "fixture", "id": "no-real-model" }, "policyHash": "fixture-policy" },
+      "status": "completed", "resultHash": "fixture-result-2", "oracle": { "taskVersion": "fixture-task-v1", "kind": "deterministic", "independent": true, "verdict": "fail", "resultHash": "fixture-result-2", "evidenceRefs": ["fixture:held-out-test-2"] },
+      "reviewVerdict": "pass", "durationMs": 200, "usage": { "modelCalls": 2, "inputTokens": 20, "outputTokens": 10, "costUsd": 0.2 }, "humanInterventions": 1
+    },
+    {
+      "trialId": "fixture-baseline-timeout", "taskId": "csv-empty", "taskVersion": "fixture-task-v1", "variant": "baseline",
+      "provenance": { "specflowVersion": "fixture-before", "harness": { "id": "sandbox", "version": "fixture-v1" }, "model": { "provider": "fixture", "id": "no-real-model" }, "policyHash": "fixture-policy" },
+      "status": "timeout", "resultHash": null, "oracle": { "taskVersion": "fixture-task-v1", "kind": "deterministic", "independent": true, "verdict": "unassessed", "resultHash": null, "evidenceRefs": [] },
+      "durationMs": 1000, "usage": { "modelCalls": null, "inputTokens": null, "outputTokens": null, "costUsd": null }, "humanInterventions": 1
+    },
+    {
+      "trialId": "fixture-policy-model-only", "taskId": "csv-empty", "taskVersion": "fixture-task-v1", "variant": "with-policy",
+      "provenance": { "specflowVersion": "fixture-after", "harness": { "id": "sandbox", "version": "fixture-v1" }, "model": { "provider": "fixture", "id": "no-real-model" }, "policyHash": "fixture-policy-next" },
+      "status": "completed", "resultHash": "fixture-result-4", "oracle": { "taskVersion": "fixture-task-v1", "kind": "model", "independent": true, "verdict": "pass", "resultHash": "fixture-result-4", "evidenceRefs": ["fixture:model-review-only"] },
+      "reviewVerdict": "pass", "durationMs": 100, "usage": { "modelCalls": 1, "inputTokens": 10, "outputTokens": 5, "costUsd": null }, "humanInterventions": 0
+    },
+    {
+      "trialId": "fixture-policy-wrong-hash", "taskId": "csv-empty", "taskVersion": "fixture-task-v1", "variant": "with-policy",
+      "provenance": { "specflowVersion": "fixture-after", "harness": { "id": "sandbox", "version": "fixture-v1" }, "model": { "provider": "fixture", "id": "no-real-model" }, "policyHash": "fixture-policy-next" },
+      "status": "completed", "resultHash": "fixture-result-5", "oracle": { "taskVersion": "fixture-task-v1", "kind": "human", "independent": true, "verdict": "pass", "resultHash": "fixture-older-result", "evidenceRefs": ["fixture:outdated-review"] },
+      "reviewVerdict": "pass", "durationMs": 200, "usage": { "modelCalls": 2, "inputTokens": 20, "outputTokens": 10, "costUsd": null }, "humanInterventions": 1
+    },
+    {
+      "trialId": "fixture-policy-unknown", "taskId": "csv-empty", "taskVersion": "fixture-task-v1", "variant": "with-policy",
+      "provenance": { "specflowVersion": "fixture-after", "harness": { "id": "sandbox", "version": "fixture-v1" }, "model": { "provider": "fixture", "id": "no-real-model" }, "policyHash": "fixture-policy-next" },
+      "status": "unknown", "resultHash": null, "oracle": { "taskVersion": "fixture-task-v1", "kind": "deterministic", "independent": true, "verdict": "unassessed", "resultHash": null, "evidenceRefs": [] },
+      "durationMs": null, "usage": { "modelCalls": null, "inputTokens": null, "outputTokens": null, "costUsd": null }, "humanInterventions": null
+    }
+  ]
+}

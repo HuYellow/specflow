@@ -14,9 +14,10 @@ import { localizeApiResponse } from './localization.ts';
 
 const target = z.object({ backend: z.enum(backendIds), connectionId: z.string().min(1), connectionSlug: z.string().min(1), model: z.string().min(1), rootId: z.string().optional() });
 const command = z.object({ id: z.string().regex(/^[a-z][a-z0-9_-]*$/), executable: z.string().min(1), args: z.array(z.string()), timeoutMs: z.number().int().min(100).max(600000) });
+const executionPolicySchema = z.object({ maxSteps: z.number().int().min(1).max(100).optional(), timeoutMs: z.number().int().min(1000).max(900000).optional(), maxDispatches: z.number().int().positive().safe().optional(), maxRunDispatches: z.number().int().positive().safe().optional(), maxReservedSteps: z.number().int().positive().safe().optional(), maxRunReservedSteps: z.number().int().positive().safe().optional(), maxCostUsd: z.number().positive().optional(), strictCostLimit: z.boolean().optional() }).strict();
 const workflowSchema = z.object({ schemaVersion: z.literal(1), id: z.string().min(1), name: z.string().min(1), locale: z.enum(['zh-CN', 'en']).optional(),
-  nodes: z.array(z.object({ id: z.string().regex(/^[a-z][a-z0-9_-]*$/), name: z.string().min(1), type: z.enum(['agent', 'clarify', 'review', 'verify', 'gate', 'human']), role: z.enum(['analyst', 'architect', 'developer', 'reviewer']).optional(), prompt: z.string(), inputs: z.array(z.string()), outputs: z.array(z.string().regex(/^[a-z][a-z0-9_-]*$/)), target: target.optional(), requireAcceptance: z.boolean().optional(), taskMode: z.boolean().optional(), maxSteps: z.number().int().min(1).max(100).optional(), timeoutMs: z.number().int().min(1000).max(900000).optional() })).min(1),
-  roles: z.object({ analyst: target.optional(), architect: target.optional(), developer: target.optional(), reviewer: target.optional() }), requiredVerification: z.array(z.string()), requireReview: z.boolean(), requireClarification: z.boolean().optional() });
+  nodes: z.array(z.object({ id: z.string().regex(/^[a-z][a-z0-9_-]*$/), name: z.string().min(1), type: z.enum(['agent', 'clarify', 'review', 'verify', 'gate', 'human']), role: z.enum(['analyst', 'architect', 'developer', 'reviewer']).optional(), prompt: z.string(), inputs: z.array(z.string()), outputs: z.array(z.string().regex(/^[a-z][a-z0-9_-]*$/)), target: target.optional(), requireAcceptance: z.boolean().optional(), taskMode: z.boolean().optional(), maxSteps: z.number().int().min(1).max(100).optional(), timeoutMs: z.number().int().min(1000).max(900000).optional(), executionPolicy: executionPolicySchema.optional() })).min(1),
+  roles: z.object({ analyst: target.optional(), architect: target.optional(), developer: target.optional(), reviewer: target.optional() }), requiredVerification: z.array(z.string()), requireReview: z.boolean(), requireClarification: z.boolean().optional(), executionPolicy: executionPolicySchema.optional() });
 const revisionBody = z.object({ expectedRevision: z.number().int().positive() });
 const requirementDocument = z.object({ id: z.string().min(1).max(100), name: z.string().min(1).max(200), content: z.string().min(1), source: z.enum(['upload', 'repository', 'pasted']), repositoryPath: z.string().max(1000).optional() });
 const param = (request: any, name = 'id'): string => String(request.params[name]);
@@ -132,7 +133,26 @@ export async function createApp(service: EngineeringService, options: { staticRo
     return service.saveClarificationDraft(param(request), body.expectedRevision, body.answers);
   });
   commandRoute('/api/node-runs/:id/attempts', async request => { const body = z.object({ expectedRevision: z.number().int().positive(), target: target.optional() }).parse(request.body); return service.startNode(param(request), body.expectedRevision, body.target); });
+  commandRoute('/api/node-runs/:id/repair', request => {
+    const body = z.object({ expectedRevision: z.number().int().positive(), maxRounds: z.number().int().min(1).max(10).optional(), mode: z.enum(['code', 'output']).optional() }).strict().parse(request.body);
+    return service.automation.startRepair(param(request), body.expectedRevision, { maxRounds: body.maxRounds, mode: body.mode });
+  });
+  commandRoute('/api/repair-cycles/:id/stop', request => { z.object({}).strict().parse(request.body || {}); return service.automation.stopRepair(param(request)); });
+  commandRoute('/api/workflow-runs/:id/automation', request => {
+    const body = z.object({ expectedRevision: z.number().int().positive(), autoAdvance: z.boolean(), autoRepair: z.boolean(), maxRepairRounds: z.number().int().min(1).max(10) }).strict().parse(request.body);
+    return service.automation.startAutomation(param(request), body.expectedRevision, { autoAdvance: body.autoAdvance, autoRepair: body.autoRepair, maxRepairRounds: body.maxRepairRounds });
+  });
+  commandRoute('/api/automation-runs/:id/stop', request => { z.object({}).strict().parse(request.body || {}); return service.automation.stopAutomation(param(request)); });
   commandRoute('/api/attempts/:id/stop', request => service.stopAttempt(param(request)));
+  commandRoute('/api/node-runs/:id/stop-verification', request => { z.object({}).strict().parse(request.body || {}); return service.stopVerification(param(request)); });
+  commandRoute('/api/attempts/:id/confirm-verification-stopped', request => {
+    const body = z.object({ expectedRevision: z.number().int().positive(), reason: z.string().trim().min(1).max(4000) }).strict().parse(request.body);
+    return service.confirmVerificationStopped(param(request), body.expectedRevision, body.reason);
+  });
+  commandRoute('/api/node-runs/:id/confirm-verification-stopped', request => {
+    const body = z.object({ expectedRevision: z.number().int().positive(), reason: z.string().trim().min(1).max(4000) }).strict().parse(request.body);
+    return service.confirmNodeVerificationStopped(param(request), body.expectedRevision, body.reason);
+  });
   commandRoute('/api/attempts/:id/reconcile', async request => { await service.reconcile(param(request)); return service.store.get('attempts', param(request)); });
   commandRoute('/api/attempts/:id/resume', request => service.resumeAttempt(param(request)));
   commandRoute('/api/interactions/:id/answer', request => { const body = z.object({ answer: z.unknown() }).parse(request.body); return service.answerInteraction(param(request), body.answer); });

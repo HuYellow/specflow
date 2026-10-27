@@ -10,9 +10,11 @@ import { ClarificationHistory } from './ClarificationPanel.tsx';
 import { StepFacts } from './StepFacts.tsx';
 import { InteractionCard } from './RuntimeInteraction.tsx';
 import { backendInfo } from './backendSelection.ts';
+import { ExecutionFacts } from './ExecutionFacts.tsx';
+import { VerificationRecovery } from './VerificationRecovery.tsx';
 import './flow.css';
 
-type Detail = Attempt & { bindings: ExecutionBinding[]; interactions: Interaction[]; tasks: TaskRun[] };
+type Detail = Attempt & { bindings: ExecutionBinding[]; interactions: Interaction[]; tasks: TaskRun[]; verificationLive?: boolean };
 export function RunDetail({ attemptId }: { attemptId: string }) {
   const locale = useLocale();
   const { snapshot, backend, perform, isPending } = useWorkspace();
@@ -30,6 +32,7 @@ export function RunDetail({ attemptId }: { attemptId: string }) {
   }, [attemptId, summary?.revision, interactionVersion, retry, locale]);
   const attempt = detail?.id === attemptId ? detail : undefined;
   const attemptBackend = attempt ? backendInfo(backend, attempt.target.backend) : undefined;
+  const canResume = attemptBackend?.capabilities?.canResume ?? attempt?.policy?.capabilities?.canResume;
   const node = snapshot?.nodes.find(node => node.id === attempt?.nodeRunId);
   const definition = snapshot?.runs.find(run => run.id === node?.workflowRunId)?.definition.nodes.find(definition => definition.id === node?.nodeId);
   const scope = `attempt:${attemptId}`, pending = snapshot?.item.status === 'accepted' || isPending(scope) || !!node && isPending(`node:${node.id}`);
@@ -43,18 +46,20 @@ export function RunDetail({ attemptId }: { attemptId: string }) {
     {error && <div className="load-feedback" role="alert"><strong>{t("无法读取完整运行材料")}</strong><p>{t(error)}</p><button className="outline-button" onClick={() => setRetry(value => value + 1)}><RefreshCcw size={14} />{t("重新读取详情")}</button></div>}
     {attempt && <><div className="panel-heading"><div><h2>{node ? workflowText(node.name) : t('历史步骤')}<span>{t('尝试 {number}', { number: attempt.number })}</span></h2><p>{targetLabel(attempt.target)} · {fmt(attempt.startedAt)}{attempt.finishedAt ? ` — ${fmt(attempt.finishedAt)}` : ''}</p></div><span className={`badge ${attempt.execution}`}>{labels[attempt.execution]}</span></div>
       {node && <div className="run-step-facts"><span>{t("所属步骤当前状态")}</span><StepFacts node={node} definition={definition} /></div>}
-      <div className="run-metrics"><div><span>{t("输入 Token")}</span><strong>{attempt.usage?.inputTokens ?? '—'}</strong></div><div><span>{t("输出 Token")}</span><strong>{attempt.usage?.outputTokens ?? '—'}</strong></div><div><span>{t("实际费用")}</span><strong>{attempt.target.backend === 'sandbox' ? t('不调用 API') : attempt.usage?.costUsd != null ? `$${attempt.usage.costUsd}` : t('未知')}</strong></div></div>
+      <ExecutionFacts attempt={attempt} />
+      {attempt.verificationPending && attempt.verificationLive === false && <VerificationRecovery disabled={pending} onConfirm={reason => void perform(() => api(`/attempts/${attempt.id}/confirm-verification-stopped`, { expectedRevision: attempt.revision, reason }), t('验证进程确认已记录'), scope)} />}
       <div className="identity-list"><h3>{t("执行身份")}</h3>{attempt.bindings.map(binding => <div key={binding.id}><span>{binding.kind === 'resume' ? t('恢复绑定') : t('初始绑定')}</span><code title={JSON.stringify(binding.ref)}>session {short(binding.ref.sessionId)} / turn {short(binding.ref.turnId)} / run {short(binding.ref.runId)}</code></div>)}{!attempt.bindings.length && <p>{t("尚未取得执行身份，不能据此重复派发。")}</p>}</div>
       {attempt.requirementRevisionId && <div className="identity-list"><h3>{t("本次使用的需求")}</h3>{(() => { const source = snapshot?.requirements.history.find(revision => revision.id === attempt.requirementRevisionId); return <div><span>{t('版本 {version} · {count} 份文档', { version: source?.number ?? t('历史版本'), count: source?.documents.length ?? '—' })}{source?.id !== snapshot?.requirements.current.id ? t(' · 当前需求已更新') : ''}</span><code>{source?.contentHash || attempt.requirementRevisionId}</code></div>; })()}</div>}
       {attempt.guidance && <details className="context-details"><summary>{t("本次使用的项目章程")} <ChevronDown size={15} /></summary><div><span>{t("内容")} <code>{attempt.guidance.contentHash}</code>{attempt.guidance.contentHash !== snapshot?.project.guidance?.contentHash ? t(' · 当前章程已更新') : ''}</span>{attempt.guidance.files.map(file => <div key={file.name}><h4>{file.name}</h4><pre>{file.content}</pre></div>)}<h4>{t("补充工程规则")}</h4><pre>{attempt.guidance.rules}</pre></div></details>}
       {attempt.clarificationSessionId && (() => { const session = snapshot?.clarifications.find(session => session.id === attempt.clarificationSessionId); return session ? <div className="context-details"><ClarificationHistory session={session} /></div> : null; })()}
       {attempt.error && <div className="blocker-box"><CircleDot size={16} /><p>{t(attempt.error)}</p></div>}
+      {attempt.controlError && attempt.controlError !== attempt.error && <div className="blocker-box"><CircleDot size={16} /><p>{t(attempt.controlError)}</p></div>}
       {attempt.reviewReport && <div className="review-reports" aria-label={t("双视角复核报告")}>{[...new Map([attempt, ...(snapshot?.attempts || []).filter(other => other.id !== attempt.id && other.reviewReport?.groupId === attempt.reviewReport?.groupId)].filter(other => other.reviewReport).map(other => [other.id, other])).values()].map(other => <ReviewCard key={other.id} report={other.reviewReport!} />)}</div>}
       <details className="context-details"><summary>{t("查看固定输入与上下文")} <ChevronDown size={15} /></summary><div><span>{t("输入哈希")} <code>{attempt.inputHash}</code></span>{attempt.inputs.map(input => <p key={`${input.logicalId}:${input.artifactRevisionId}`}>{input.logicalId} · {input.artifactRevisionId} · {input.contentHash}</p>)}<pre>{attempt.prompt}</pre></div></details>
       {attempt.output && <details className="context-details" open={!attempt.reviewReport}><summary>{t("阶段输出")} <ChevronDown size={15} /></summary><pre>{(() => { try { return JSON.stringify(JSON.parse(attempt.output), null, 2); } catch { return attempt.output; } })()}</pre></details>}
       {attempt.interactions.filter(interaction => (snapshot?.interactions.find(current => current.id === interaction.id) || interaction).state === 'pending').map(interaction => <InteractionCard key={interaction.id} interaction={interaction} />)}
-      <div className="run-actions"><button className="outline-button" disabled={pending || !['running', 'starting', 'waiting_interaction'].includes(attempt.execution)} onClick={() => void control('stop')}><Square size={14} />{pending ? t('正在提交控制请求…') : t('停止本次执行')}</button><button className="outline-button" disabled={pending || !['reconciling', 'failed', 'cancelled'].includes(attempt.execution)} onClick={() => void control('reconcile')}><RefreshCcw size={14} />{t("核对原执行")}</button><button className="outline-button" disabled={pending || attemptBackend?.capabilities?.canResume === false || !['reconciling', 'failed', 'cancelled'].includes(attempt.execution)} onClick={() => void control('resume')}>{t("恢复原执行")}</button></div>
-      {attemptBackend?.capabilities?.canResume === false && <p className="run-control-note">{t('{backend} 不支持恢复原执行；可先核对结果，再创建新尝试。', { backend: attemptBackend.name })}</p>}
+      <div className="run-actions"><button className="outline-button" disabled={pending || !!attempt.stopRequestedAt || !['running', 'starting', 'waiting_interaction', 'reconciling'].includes(attempt.execution)} onClick={() => void control('stop')}><Square size={14} />{attempt.stopRequestedAt && !attempt.terminalConfirmedAt ? t('正在请求停止') : pending ? t('正在提交控制请求…') : t('停止本次执行')}</button><button className="outline-button" disabled={pending || !['reconciling', 'failed', 'cancelled'].includes(attempt.execution)} onClick={() => void control('reconcile')}><RefreshCcw size={14} />{t("核对原执行")}</button><button className="outline-button" disabled={pending || canResume !== true || !['reconciling', 'failed', 'cancelled'].includes(attempt.execution)} onClick={() => void control('resume')}>{t("恢复原执行")}</button></div>
+      {canResume === false && <p className="run-control-note">{t('{backend} 不支持恢复原执行；可先核对结果，再创建新尝试。', { backend: attemptBackend?.name || attempt.target.backend })}</p>}
       {attempt.execution === 'reconciling' && <p className="run-control-note" role="status">{t("原执行状态尚未确认。请先核对身份，避免创建重复执行。")}</p>}
       {loading && <p className="run-control-note" role="status">{t("正在更新运行详情…")}</p>}
     </>}

@@ -10,6 +10,8 @@ import { StepFacts } from './StepFacts.tsx';
 import { ResizablePane } from './ResizablePane.tsx';
 import { getConditionReasons, getFlowReadinessKey, getNextAction, getNodeDispatchScopes, getStepStatus, getWorkflowProgress, groupWorkflowNodes, selectCurrentNode, type ReadinessState } from './flowSelectors.ts';
 import { backendInfo, currentTargetOverride, projectBackend, selectBackendTarget, targetsForBackend } from './backendSelection.ts';
+import { AutomationControls, type AutomationCommand } from './AutomationControls.tsx';
+import { VerificationRecovery } from './VerificationRecovery.tsx';
 import './flow.css';
 
 export function Flow() {
@@ -20,6 +22,7 @@ export function Flow() {
   const [groupOpen, setGroupOpen] = useState<Record<string, boolean>>({});
   const [now, setNow] = useState(Date.now);
   const clarification = useRef<HTMLDivElement>(null);
+  const verificationRecovery = useRef<HTMLDivElement>(null);
   const run = snapshot?.runs.at(-1);
   const nodes = snapshot?.nodes.filter(n => n.workflowRunId === run?.id) || [];
   const historicalNode = snapshot?.nodes.find(n => n.id === selectedNode);
@@ -36,6 +39,8 @@ export function Flow() {
   const selectedBackend = backendInfo(backend, executionBackend);
   const requirements = snapshot?.requirements.current;
   const accepted = snapshot?.item.status === 'accepted';
+  const automated = !!snapshot?.automationRuns?.some(value => value.workflowRunId === viewedRun?.id && value.state === 'active') || !!snapshot?.repairCycles?.some(value => value.workflowRunId === viewedRun?.id && value.state === 'active');
+  const unconfirmedVerification = node?.type === 'verify' && node.verificationUnconfirmed;
   const unsavedRequirements = !!snapshot && !!requirements && hasRequirementDraft(snapshot.item.id, requirements);
   const targets = targetsForBackend(backend?.targets || [], executionBackend);
   const progress = getWorkflowProgress(run, nodes), groups = groupWorkflowNodes(run, nodes);
@@ -55,6 +60,7 @@ export function Flow() {
   }, [readinessKey, retry, accepted, locale]);
 
   const clientBlockers = [
+    ...(automated ? [t('自动化正在管理此流程，请先停止自动推进或修订再手动派发。')] : []),
     ...(unsavedRequirements ? [t('需求有未保存草稿或版本冲突，请先保存或处理冲突')] : []),
     ...(snapshot?.project.guidanceError ? [snapshot.project.guidanceError] : []),
     ...(modelStage && !selectedTarget ? [t('尚未选择当前底座的连接与模型，请在步骤上下文中配置')] : []),
@@ -76,6 +82,10 @@ export function Flow() {
     if (!canDispatch || !node) return;
     return perform(() => api(`/node-runs/${node.id}/attempts`, { expectedRevision: node.revision, ...(overrideTarget ? { target: overrideTarget } : {}) }), node.type === 'human' ? t('候选代码已接纳') : t('阶段已派发，运行结果会自动更新'), pendingScope);
   };
+  const automationCommand = (command: AutomationCommand, id: string, input?: unknown) => {
+    const route = command === 'startRepair' ? `/node-runs/${id}/repair` : command === 'stopRepair' ? `/repair-cycles/${id}/stop` : command === 'startAutomation' ? `/workflow-runs/${id}/automation` : `/automation-runs/${id}/stop`;
+    void perform(() => api(route, input || {}), t('自动化操作已提交'), `automation:${snapshot?.item.id}`);
+  };
   const openPendingItem = (item: typeof pendingItems[number]) => {
     openAttention(item);
     if (item.kind === 'clarification' && item.nodeRunId === node?.id) requestAnimationFrame(() => clarification.current?.scrollIntoView({ block: 'start', behavior: 'smooth' }));
@@ -83,7 +93,8 @@ export function Flow() {
   const selectedIsHistory = !!node && node.workflowRunId !== run?.id;
   const action = getNextAction({ node, runState: viewedRun?.state, accepted, readiness, clientBlocked: !!clientBlockers.length, unsavedRequirements, dispatchEnabled: canDispatch, hasOutput: !!outputArtifact, hasAttempt: !!attempt, waiting, reviewable, pendingCount: pendingItems.length });
   const clickAction = () => {
-    if (action.kind === 'dispatch') void start();
+    if (unconfirmedVerification) { verificationRecovery.current?.scrollIntoView({ block: 'center', behavior: 'smooth' }); verificationRecovery.current?.querySelector('button')?.focus(); }
+    else if (action.kind === 'dispatch') void start();
     else if (action.kind === 'evidence') setTab('code');
     else if (action.kind === 'attention') { const item = pendingItems.find(value => value.id === action.attentionId); if (item) openPendingItem(item); }
     else if (action.kind === 'run') openAttempt();
@@ -91,7 +102,7 @@ export function Flow() {
     else if (action.kind === 'retry') setRetry(value => value + 1);
     else if (action.kind === 'requirements') setTab('requirements');
   };
-  let summary = action.summary;
+  let summary = unconfirmedVerification ? t('验证进程还未确认停止。核对本机进程后，手动确认解除阻塞。') : action.summary;
   if (action.kind === 'run' && node && ['starting', 'running'].includes(node.execution) && attempt?.startedAt && Number.isFinite(Date.parse(attempt.startedAt))) {
     const elapsed = Math.max(0, Math.floor((now - Date.parse(attempt.startedAt)) / 1000));
     summary += t(" 已运行 {value1} 分 {value2} 秒。", { value1: Math.floor(elapsed / 60), value2: elapsed % 60 });
@@ -109,16 +120,19 @@ export function Flow() {
   return <ResizablePane context={context} overlayOpen={overlayOpen}>
     <div className="flow-task-bar" aria-label={t("当前任务")}><div className="flow-task-heading"><div><div className="flow-task-mode">{selectionMode === 'pinned' ? <><Pin size={13} /> {t("固定查看")}{selectedIsHistory ? t(' · 历史运行') : ''}</> : <><Activity size={13} /> {t("跟随当前任务")}</>}</div><h2>{node ? workflowText(node.name) : t('尚无步骤')}</h2></div>{selectionMode === 'pinned' && <button className="text-button" onClick={followCurrent}><RefreshCcw size={14} /> {t("回到当前任务")}</button>}</div>
       {node && <StepFacts node={node} definition={def} compact />}
-      <div className="flow-task-action"><div><p id="flow-action-explanation" role={active ? 'timer' : 'status'}>{summary}</p>{pendingItems.length > 1 && <button className="text-button" onClick={openPending}>{t('查看全部 {count} 项待处理', { count: pendingItems.length })} <ChevronRight size={13} /></button>}</div><button className="primary-button" disabled={action.disabled} aria-describedby="flow-action-explanation" onClick={clickAction}>{action.kind === 'dispatch' && dispatching ? <Loader2 size={16} className="spin" /> : action.kind === 'dispatch' ? <Play size={16} /> : action.kind === 'retry' ? <RefreshCcw size={16} /> : <ArrowRight size={16} />}{action.label}</button></div>
+      <div className="flow-task-action"><div><p id="flow-action-explanation" role={active ? 'timer' : 'status'}>{summary}</p>{pendingItems.length > 1 && <button className="text-button" onClick={openPending}>{t('查看全部 {count} 项待处理', { count: pendingItems.length })} <ChevronRight size={13} /></button>}</div><button className="primary-button" disabled={unconfirmedVerification ? accepted || dispatching : action.disabled} aria-describedby="flow-action-explanation" onClick={clickAction}>{action.kind === 'dispatch' && dispatching ? <Loader2 size={16} className="spin" /> : action.kind === 'dispatch' ? <Play size={16} /> : action.kind === 'retry' ? <RefreshCcw size={16} /> : <ArrowRight size={16} />}{unconfirmedVerification ? t('核对验证进程') : action.label}</button></div>
     </div>
     {run && !run.definition.requireClarification && snapshot?.workflows.at(-1)?.definition.requireClarification && !accepted && <div className="flow-upgrade-notice"><span>{t("当前运行使用旧模板；新版已加入独立需求澄清。历史运行会保留。")}</span><button className="outline-button" disabled={isPending(`workflow:${snapshot.item.id}`)} onClick={() => perform(() => api('/workflow-runs', { workflowId: snapshot.workflows.at(-1)!.id }), t('已创建包含需求澄清的新运行，历史记录保留'), `workflow:${snapshot.item.id}`)}>{t("启用含澄清的新流程")}</button></div>}
     <div className="flow-progress-section"><div><span>{progress.total ? t("当前有效通过 {completed} / {total} 步", { completed: progress.completed, total: progress.total }) : t('尚无步骤')}</span>{progress.percent !== undefined && <strong>{progress.percent}%</strong>}<span className="flow-delivery-state">{accepted ? t('工作项已交付') : t('工作项尚未交付')}</span></div>{progress.percent !== undefined && <div className="progress-track" role="progressbar" aria-label={t("当前有效通过步骤")} aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress.percent} aria-valuetext={t("当前有效通过 {completed} / {total} 步：执行已结束、门禁通过且版本有效，需人工接纳的步骤已接纳；{awaitingAcceptance} 步待人工接纳，{stale} 步上游已变更。百分比不代表交付。", { completed: progress.completed, total: progress.total, awaitingAcceptance: progress.awaitingAcceptance, stale: progress.stale })}><span style={{ width: `${progress.percent}%` }} /></div>}{!!progress.stale && <p>{t('{count} 步的上游依据已变更，有效通过计数随之回退。', { count: progress.stale })}</p>}</div>
     {node && <section className="flow-current-body" aria-label={t("当前步骤的工作内容")}>
+      {node.type === 'verify' && active && !node.verificationUnconfirmed && <div className="run-actions"><button className="outline-button" disabled={dispatching || !!node.verificationStopRequestedAt} onClick={() => void perform(() => api(`/node-runs/${node.id}/stop-verification`, {}), t('停止验证请求已提交'), `node:${node.id}`)}>{node.verificationStopRequestedAt ? t('正在请求停止') : t('停止验证命令')}</button></div>}
+      {unconfirmedVerification && <div ref={verificationRecovery}><VerificationRecovery disabled={dispatching || accepted} onConfirm={reason => void perform(() => api(`/node-runs/${node.id}/confirm-verification-stopped`, { expectedRevision: node.revision, reason }), t('验证进程确认已记录'), `node:${node.id}`)} /></div>}
       {!accepted && !!reasons.length && <details className={`flow-conditions ${readiness.state === 'error' ? 'has-error' : ''}`} open={clientBlockers.length > 0 || readiness.state === 'error' || readiness.state === 'blocked'}><summary>{t("运行条件")} <span>{readiness.state === 'loading' ? t('检查中') : readiness.state === 'error' ? t('读取失败') : readiness.state === 'ready' ? clientBlockers.length ? t('服务端满足 · 本地待处理') : t('服务端满足') : t('服务端条件不足')}</span></summary><ul>{reasons.map(reason => <li key={reason.reason}><span>{reason.reason}</span><small>{reason.sources.join(' · ')}</small></li>)}</ul><div className="flow-condition-actions">{(readiness.state === 'error' || readiness.state === 'blocked') && <button className="outline-button" onClick={() => setRetry(value => value + 1)}><RefreshCcw size={14} /> {t("重试检查")}</button>}{unsavedRequirements && <button className="outline-button" onClick={() => setTab('requirements')}>{t("保存需求 / 处理冲突")}</button>}{snapshot?.project.guidanceError && <button className="outline-button" onClick={openSettings}>{t("修复项目章程")}</button>}</div></details>}
       {node.type === 'clarify' && <div ref={clarification} className="flow-clarification"><ClarificationPanel session={session} target={overrideTarget} disabled={unsavedRequirements || !!snapshot?.project.guidanceError} /></div>}
       {action.kind !== 'dispatch' && !accepted && !active && !waiting && viewedRun?.state === 'active' && <div className="flow-secondary-dispatch"><span>{node.freshness === 'stale' ? t('当前结果已过期，使用最新已保存依据创建新尝试。') : t('需要继续此步骤时，运行条件仍须全部满足。')}</span><button className="outline-button" disabled={!canDispatch} onClick={() => void start()}>{dispatching ? <Loader2 size={14} className="spin" /> : <Play size={14} />}{node.type === 'human' ? t('接纳候选代码') : node.execution === 'pending' ? t('运行所选步骤') : t('创建新尝试')}</button></div>}
       {outputArtifact && node.execution === 'completed' && action.kind !== 'artifact' && <button className="flow-result-link" onClick={openOutput}><FileCheck2 size={17} /><span>{t('查看 {artifact}', { artifact: t(logicalLabels[outputArtifact.logicalId] || outputArtifact.logicalId) })}<small>{t('修订 {revision} · 以选定修订的接纳状态为准', { revision: short(outputArtifact.currentRevisionId) })}</small></span><ArrowRight size={15} /></button>}
     </section>}
+    {viewedRun && !selectedIsHistory && <AutomationControls workflowRun={viewedRun} node={node} definition={def} repairs={snapshot?.repairCycles} automations={snapshot?.automationRuns} disabled={accepted || dispatching || isPending(`automation:${snapshot?.item.id}`)} startBlocked={unsavedRequirements || !!snapshot?.project.guidanceError} onCommand={automationCommand} />}
     <div className="flow-directory-heading"><div><h3>{t("工程流程")} <span>{t('{count} 个步骤', { count: run?.definition.nodes.length || 0 })}</span></h3><p>{t("分组仅用于浏览，执行顺序与依赖读取流程定义。")}</p></div><button className="text-button" disabled={accepted} onClick={openWorkflow}><Settings2 size={15} /> {t("编辑流程")}</button></div>
     <div className="flow-step-groups">{groups.map(group => { const hasProblem = group.nodes.some(value => value.freshness === 'stale' || value.gate === 'blocked' || ['failed', 'waiting_interaction', 'reconciling'].includes(value.execution)); const opened = groupOpen[`${run?.id}:${group.name}`] ?? (hasProblem || group.nodes.some(value => value.id === node?.id)); const count = group.nodes.filter(value => getStepStatus(value, run?.definition.nodes.find(d => d.id === value.nodeId)).effectivelyPassed).length; return <details className="flow-step-group" key={`${run?.id}:${group.name}`} open={opened} onToggle={event => { const isOpen = event.currentTarget.open; if (isOpen !== opened) setGroupOpen(value => ({ ...value, [`${run?.id}:${group.name}`]: isOpen })); }}><summary><ChevronDown size={16} /><strong>{t(group.name)}</strong><span>{t('有效通过 {count} / {total}', { count, total: group.nodes.length })}</span>{hasProblem && <span className="flow-group-attention">{t("需要处理")}</span>}</summary>{group.nodes.map(value => { const definition = run?.definition.nodes.find(d => d.id === value.nodeId), passed = getStepStatus(value, definition).effectivelyPassed; return <div className={`flow-step-row${value.id === node?.id ? ' selected' : ''}`} key={value.id}><button className="flow-stage-select" aria-pressed={value.id === node?.id} onClick={() => setSelectedNode(value.id)}><span className={`flow-stage-number${passed ? ' passed' : ''}`}>{passed ? <Check size={15} /> : ['starting', 'running'].includes(value.execution) ? <Loader2 size={15} className="spin" /> : String(run!.definition.nodes.findIndex(d => d.id === value.nodeId) + 1).padStart(2, '0')}</span><NodeIcon type={value.type} size={17} /><span>{workflowText(value.name)}</span><ChevronRight size={15} /></button><StepFacts node={value} definition={definition} compact /></div>; })}</details>; })}</div>
     <div className="flow-requirements-link"><FileText size={18} /><span>{t('已保存需求 · 版本 {version}', { version: requirements?.number || 1 })}<small>{t('{count} 份文档', { count: requirements?.documents.length || 0 })}{requirements?.request.trim() ? t(' + 需求正文') : ''}{unsavedRequirements ? t(' · 另有本地草稿，尚未供新执行使用') : ''}</small></span><button className="text-button" onClick={() => setTab('requirements')}>{t("查看 / 编辑")} <ArrowRight size={14} /></button></div>

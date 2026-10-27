@@ -42,6 +42,18 @@ test('DSH commands preserve the independent review gate and reject malformed or 
   } finally { await api.close(); await f.cleanup(); }
 });
 
+test('DSH automation commands validate bounded repair and revision inputs before invoking the shared controller', async () => {
+  const f = await fixture(), api = new SpecflowApi(f.service);
+  try {
+    const node = f.store.list('nodes')[0], run = f.store.list('runs')[0];
+    await assert.rejects(api.command({ operation: 'startRepair', id: node.id, input: { maxRounds: 2 }, idempotencyKey: 'repair-without-revision' }));
+    await assert.rejects(api.command({ operation: 'startRepair', id: node.id, input: { expectedRevision: node.revision, maxRounds: 0 }, idempotencyKey: 'repair-zero-rounds' }));
+    await assert.rejects(api.command({ operation: 'startAutomation', id: run.id, input: { expectedRevision: run.revision, autoAdvance: true, autoRepair: true, maxRepairRounds: 11 }, idempotencyKey: 'too-many-rounds' }));
+    assert.equal(f.store.list('repairCycles').length, 0);
+    assert.equal(f.store.list('automationRuns').length, 0);
+  } finally { await api.close(); await f.cleanup(); }
+});
+
 test('DSH requirement editing keeps attached sources and rejects a stale draft without writing', async () => {
   const f = await fixture(), api = new SpecflowApi(f.service);
   try {
