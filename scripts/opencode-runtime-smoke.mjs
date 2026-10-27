@@ -78,7 +78,14 @@ try {
   const run = async marker => { const frozen = input(marker); const ref = await first.prepare(frozen); latestRef = ref; assert.deepEqual(await first.prepare(frozen), ref, 'Preparation must be idempotent'); assert.equal((await first.start(ref, frozen)).state, 'running'); return { frozen, ref }; };
   const terminal = ref => until(() => first.query(ref), snapshot => ['completed', 'cancelled', 'failed', 'unknown'].includes(snapshot.state), 'Execution did not terminate');
   const normal = await run('SPECFLOW_SMOKE_NORMAL');
-  const completed = await terminal(normal.ref); assert.equal(completed.state, 'completed', JSON.stringify(completed)); assert.deepEqual(JSON.parse(completed.output), output); assert.equal(completed.usage.inputTokens, 10);
+  const completed = await terminal(normal.ref); assert.equal(completed.state, 'completed', JSON.stringify(completed)); assert.deepEqual(JSON.parse(completed.output), output);
+  const measured = completed.usageMeasurement;
+  assert.ok(measured, 'The terminal result must expose a canonical usage meter');
+  assert.equal(measured.scope, 'turn'); assert.equal(measured.mode, 'cumulative');
+  assert.equal(measured.eventId, completed.terminalEventId);
+  assert.equal(measured.inputTokens, 10); assert.equal(measured.outputTokens, 20);
+  assert.ok(measured.costUsd === null || Number.isFinite(measured.costUsd) && measured.costUsd >= 0, 'Cost is either reported or explicitly unknown');
+  assert.equal(measured.completeness, measured.costUsd === null ? 'partial' : 'complete');
   const restored = backend(); assert.deepEqual(await restored.readResult(normal.ref), completed, 'A new adapter instance must recover the original terminal result'); assert.equal((await restored.planResume(normal.ref)).possible, false);
   const permission = await run('SPECFLOW_SMOKE_PERMISSION');
   const pending = await until(() => first.query(permission.ref), snapshot => snapshot.state === 'waiting_interaction' || snapshot.state === 'unknown', 'Tool permission did not appear'); assert.equal(pending.state, 'waiting_interaction', JSON.stringify(pending));

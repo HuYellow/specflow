@@ -78,7 +78,15 @@ try {
   const readOnly = input('read-only', { readOnly: true });
   adapter.script = [toolResponse('specflow_read_file', { path: 'input.txt' }), textResponse(output)];
   const ref = await backend.prepare(readOnly); assert.equal((await backend.start(ref, readOnly)).state, 'running');
-  const result = await waitTerminal(backend, ref); assert.equal(result.state, 'completed', JSON.stringify(result)); assert.equal(result.output, output); assert.equal(result.usage.inputTokens, 15);
+  const result = await waitTerminal(backend, ref); assert.equal(result.state, 'completed', JSON.stringify(result)); assert.equal(result.output, output);
+  // The tool-only scripted response reports no usage. A known final-step count
+  // cannot stand in for the whole turn or silently turn missing counters into 0.
+  assert.ok(result.usageMeasurement, 'The terminal result must expose its meter and completeness');
+  assert.equal(result.usageMeasurement.scope, 'turn'); assert.equal(result.usageMeasurement.mode, 'cumulative');
+  assert.equal(result.usageMeasurement.eventId, result.terminalEventId);
+  assert.equal(result.usageMeasurement.inputTokens, null); assert.equal(result.usageMeasurement.outputTokens, null);
+  assert.equal(result.usageMeasurement.costUsd, null); assert.equal(result.usageMeasurement.completeness, 'unknown');
+  assert.equal(result.usage, undefined, 'Incomplete turn counters must not appear as a complete legacy usage total');
   for (const request of adapter.requests) assert.deepEqual(request.tools.map(tool => tool.name).sort(), ['specflow_list_files', 'specflow_read_file']);
   const reader = await ctx.sessionPersistence.open(ref.sessionId, 'read');
   const saved = (await reader.read()).events; await reader.close();
@@ -127,10 +135,17 @@ try {
   await service.waitForIdle();
   const completedAttempt = store.get('attempts', attempt.id); assert.equal(completedAttempt.execution, 'completed', JSON.stringify(completedAttempt)); assert.equal(completedAttempt.target.backend, 'dsh');
   const binding = store.get('bindings', completedAttempt.bindingId); assert.equal(binding.ref.backend, 'dsh'); assert.equal(binding.ref.rootId, restarted.rootId);
+  const measured = (await restarted.readResult(binding.ref)).usageMeasurement;
+  assert.ok(measured, 'The text-only response reports known token usage through the canonical meter');
+  assert.equal(measured.scope, 'turn'); assert.equal(measured.mode, 'cumulative');
+  assert.equal(measured.inputTokens, 15); assert.equal(measured.outputTokens, 7);
+  assert.equal(measured.costUsd, null); assert.equal(measured.completeness, 'partial');
+  assert.equal(completedAttempt.usageSummary.inputTokens, 15); assert.equal(completedAttempt.usageSummary.outputTokens, 7);
+  assert.equal(completedAttempt.usageSummary.costUsd, null); assert.equal(completedAttempt.usageSummary.completeness, 'partial');
   const artifact = store.list('artifacts', value => value.workItemId === item.id && value.logicalId === 'spec')[0]; assert.ok(artifact, 'The shared core must persist a specification artifact');
   const revision = store.get('artifactRevisions', artifact.currentRevisionId); assert.equal(revision.originAttemptId, completedAttempt.id); assert.equal(revision.content, specification); assert.equal(store.get('nodes', specifyNode.id).execution, 'completed');
   assert.equal(await readFile(join(item.workspace, 'README.md'), 'utf8'), '# DSH engineering core smoke\n\nA clean baseline repository.\n');
-  process.stdout.write(JSON.stringify({ sdkVersion, passed: ['real agent create and identified followup', 'scoped read-only tools and inherited capability exclusion', 'JSONL terminal and cold reconciliation', 'workspace directory and file tools', 'native pre-step maxSteps', 'cancel and terminal persistence', 'resume explicitly unsupported', 'shared engineering core, isolated Git worktree, real DSH dispatch and persisted spec artifact'], providerRequests: adapter.requests.length }) + '\n');
+  process.stdout.write(JSON.stringify({ sdkVersion, passed: ['real agent create and identified followup', 'scoped read-only tools and inherited capability exclusion', 'unknown usage is preserved and complete token meters reach the core', 'JSONL terminal and cold reconciliation', 'workspace directory and file tools', 'native pre-step maxSteps', 'cancel and terminal persistence', 'resume explicitly unsupported', 'shared engineering core, isolated Git worktree, real DSH dispatch and persisted spec artifact'], providerRequests: adapter.requests.length }) + '\n');
 } finally {
   await engineeringRuntime?.close(); await Promise.allSettled(backends.map(backend => backend.close())); await ctx.fiber.dispose(); await rm(temporary, { recursive: true, force: true });
 }
