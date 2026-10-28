@@ -11,6 +11,7 @@ import { chromium } from '@playwright/test';
 const root = resolve(import.meta.dirname, '..');
 const pluginRoot = join(root, 'plugins', 'deepseek-specflow');
 const uiRequire = createRequire(join(pluginRoot, 'package.json'));
+const pluginManifest = JSON.parse(await readFile(join(pluginRoot, 'package.json'), 'utf8'));
 for (const name of ['react', 'react-dom']) {
   const version = JSON.parse(await readFile(uiRequire.resolve(`${name}/package.json`), 'utf8')).version;
   assert.equal(version.split('.')[0], '18', `UI smoke requires ${name} 18; install plugin development dependencies.`);
@@ -63,7 +64,7 @@ const connection={rpc:{call:async(channel,endpoint,payload,signal)=>{
     fixture.reads++;
     if(fixture.failRead)return {ok:false,error:{code:'gateway/internal',message:'模拟：本地服务暂时不可用',details:{}}};
     let value;
-    if(payload.resource==='bootstrap')value={version:'0.1.0',canWrite:true,projects:fixture.projects,workItems:fixture.workItems,catalog:{backends:[{id:'dsh',name:'DeepSeek Harness',capabilities:{available:true,canResume:false,canInteract:false,readOnlyReview:true}}],targets:[target]}};
+    if(payload.resource==='bootstrap')value={version:'${pluginManifest.version}',canWrite:true,projects:fixture.projects,workItems:fixture.workItems,catalog:{backends:[{id:'dsh',name:'DeepSeek Harness',capabilities:{available:true,canResume:false,canInteract:false,readOnlyReview:true}}],targets:[target]}};
     if(payload.resource==='snapshot')value=snapshot;
     if(payload.resource==='readiness')value={ready:true,reasons:[]};
     if(payload.resource==='artifact'){const source=snapshot.revisions.find(revision=>revision.id===payload.id);value={schemaVersion:1,sourceRevisionId:source.id,sourceContentHash:source.contentHash,mode:source.id===revision.id?'authored':'extractive',brief:{title:source.id===revision.id?'CSV 导入的行为边界':'修订后的 CSV 导入规格',summary:'让正常数据成功导入，并为异常数据提供可定位的错误。',sections:[{title:'验收标准',items:['支持带引号与转义的字段。','遇到无效数据报告具体行号。']}]}};}

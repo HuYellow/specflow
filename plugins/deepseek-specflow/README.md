@@ -14,8 +14,8 @@ DeepSeek Harness。安装后，在一个已打开的会话右侧添加 **Specflo
 
 ## 安装
 
-公开版本见 [Specflow DSH 插件 0.1.0](https://github.com/HuYellow/specflow/releases/tag/dsh-plugin-specflow%400.1.0)。
-下载 [预构建安装包](https://github.com/HuYellow/specflow/releases/download/dsh-plugin-specflow%400.1.0/dsh-plugin-specflow-0.1.0.tgz)
+公开版本见 [Specflow DSH 插件 0.1.1](https://github.com/HuYellow/specflow/releases/tag/dsh-plugin-specflow%400.1.1)。
+下载 [预构建安装包](https://github.com/HuYellow/specflow/releases/download/dsh-plugin-specflow%400.1.1/dsh-plugin-specflow-0.1.1.tgz)
 和同一 Release 的 `SHA256SUMS.txt`。在 DSH 的插件页选择安装第三方插件，输入发布包的
 HTTPS 地址或下载后的绝对路径。审核安装来源后启用插件。
 桌面版请使用自身的插件管理入口，以便安装到桌面版管理的 profile。
@@ -23,11 +23,22 @@ HTTPS 地址或下载后的绝对路径。审核安装来源后启用插件。
 CLI/Web 用户也可以安装到 Web profile：
 
 ```sh
-dsh plugin --profile web add https://github.com/HuYellow/specflow/releases/download/dsh-plugin-specflow%400.1.0/dsh-plugin-specflow-0.1.0.tgz
+dsh plugin --profile web add https://github.com/HuYellow/specflow/releases/download/dsh-plugin-specflow%400.1.1/dsh-plugin-specflow-0.1.1.tgz
 dsh web
 ```
 
 当前公开来源为 GitHub 预构建包和固定提交的 Git 分发，尚未发布到 npm。
+
+### 更新已安装的插件
+
+DSH 的第三方插件通过卸载后重新安装更新。先保存编辑并停止正在运行的 Specflow 操作，
+在同一 profile 的 **插件 → 已安装** 中卸载旧插件，再通过 **安装第三方插件** 安装新版
+预构建包，启用后重启 DSH。也可从已刷新索引的“发现”页选择新版安装。
+工程数据库、执行日志和隔离工作区会保留；若配置过自定义 `dataDir`，重装后继续使用原值。
+
+`0.1.1` 会自动关联当前对话的 Git 工程，并跟随对话目录变化。已有工程和 Specflow 工作区
+复用原记录，手动选择不受普通刷新覆盖；未保存的正文、澄清答案、工程配置和运行回答会
+阻止自动切换，直到保存、提交或取消编辑。
 
 ### 从“发现”页安装
 
@@ -107,7 +118,7 @@ npm run dsh:test
 npm run dsh:pack
 ```
 
-产物为 `release/dsh/dsh-plugin-specflow-0.1.0.tgz` 和 `SHA256SUMS.txt`。
+产物为 `release/dsh/dsh-plugin-specflow-0.1.1.tgz` 和 `SHA256SUMS.txt`。
 包内容采用白名单检查，仅包含预构建 Host、浏览器工厂、配置层、说明和许可证。
 源代码、测试、缓存、Electron、Maka、OpenCode 和其他本机数据不会进入包。
 浏览器使用 DSH 共享的 React，未打入第二份 React。

@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-specflow",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Specflow 工程流程工作台：需求、规格、任务、独立复核与人工验收",
   "type": "module",
   "main": "./dist/index.mjs",

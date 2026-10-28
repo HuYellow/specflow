@@ -1,12 +1,12 @@
 # DSH 生态分发与维护
 
-Specflow 的插件独立于桌面安装包公开分发。当前版本为 `dsh-plugin-specflow@0.1.0`，
+Specflow 的插件独立于桌面安装包公开分发。当前版本为 `dsh-plugin-specflow@0.1.1`，
 支持 DSH `0.2.1-rc.2`、宿主 Node.js 24+ 和 Git。
 
 ## 用户安装入口
 
-- [插件 Release](https://github.com/HuYellow/specflow/releases/tag/dsh-plugin-specflow%400.1.0)
-- [预构建安装包](https://github.com/HuYellow/specflow/releases/download/dsh-plugin-specflow%400.1.0/dsh-plugin-specflow-0.1.0.tgz)
+- [插件 Release](https://github.com/HuYellow/specflow/releases/tag/dsh-plugin-specflow%400.1.1)
+- [预构建安装包](https://github.com/HuYellow/specflow/releases/download/dsh-plugin-specflow%400.1.1/dsh-plugin-specflow-0.1.1.tgz)
 - [DSH 市场索引](https://raw.githubusercontent.com/HuYellow/specflow/main/market/dsh/index.json)
 
 在 DSH 插件页启用实验性的自定义插件市场，在“发现”中添加上述索引 URL。
@@ -16,12 +16,16 @@ Specflow 的插件独立于桌面安装包公开分发。当前版本为 `dsh-pl
 CLI/Web 也可直接安装预构建包：
 
 ```sh
-dsh plugin --profile web add https://github.com/HuYellow/specflow/releases/download/dsh-plugin-specflow%400.1.0/dsh-plugin-specflow-0.1.0.tgz
+dsh plugin --profile web add https://github.com/HuYellow/specflow/releases/download/dsh-plugin-specflow%400.1.1/dsh-plugin-specflow-0.1.1.tgz
 dsh web
 ```
 
 停用和卸载使用同一 profile 的插件管理入口，CLI 命令为
 `dsh plugin --profile web remove dsh-plugin-specflow`。工程数据默认保留。
+
+已安装的第三方插件通过卸载后重新安装更新。先保存编辑并停止 Specflow 操作，在同一
+profile 中卸载旧插件，再安装新版并重启 DSH。工程数据库、执行日志和隔离工作区保留；
+若使用自定义 `dataDir`，重装后继续使用原配置值。
 
 ## 为什么有独立分发分支
 
@@ -82,6 +86,25 @@ node scripts/dsh-host-smoke.mjs --source <Release地址或索引中的固定Git�
 
 提交资料明确披露 Windows、指定 DSH 版本、本地模拟模型与浏览器验收的范围。
 社区是否合并或收录由维护者决定，公开提交不代表审核通过。
+
+## 0.1.1 公开发布记录
+
+2026-10-28 16:57:35（Asia/Shanghai）已公开发布 `dsh-plugin-specflow@0.1.1`：
+
+- 自动关联当前对话的 Git 工程，识别仓库子目录和 Specflow 工作区；目录变化时同步，
+  保留手动选择与尚未保存的正文、澄清答案、工程配置和运行答复。
+- 本版还包含自 0.1.0 以来交付的中英文界面、执行预算与恢复控制，以及有限自动推进和修订。
+- 分发提交为 `c945bafc2041d1a5ac602a1daa179ae41da28476`，标签为
+  `dsh-plugin-specflow@0.1.1`，包目录保持 `plugins/deepseek-specflow`。
+- Release 提供 `dsh-plugin-specflow-0.1.1.tgz` 和 `SHA256SUMS.txt`。安装包大小为
+  435892 字节，SHA-256 为 `a391aab1c9b2f1ab3ba3dd254991acd3e008ce86dfbcb6b0b9a7f23ec25b5ec8`。
+  公网下载的安装包、校验和文件及 GitHub 资产 digest 已核对一致。
+- 根项目与插件类型检查、生产构建、291 项核心回归、27 项插件测试、4 项市场测试、
+  23 项浏览器检查和 9 组真实 DSH 底座场景通过。真实底座场景使用本地脚本供应商。
+- 公开 Release 安装包和固定提交 Git 来源均通过官方 DSH 安装、宿主激活、版本 0.1.1 回显、
+  认证、工程关联、重启与锁清理验收。验收使用独立临时 profile。
+- 市场索引采用上述实际发布时间并固定到分发提交，经过官方 DSH 0.2.1-rc.2 校验。
+  插件 Release 不设为 Latest，桌面更新入口继续使用 `desktop-v0.2.0`。
 
 ## 0.1.0 公开发布记录
 

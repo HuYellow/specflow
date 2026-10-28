@@ -45,12 +45,12 @@ SpecFlow 是面向本地 Git 仓库的软件工程工作台，提供独立桌面
 
 ## 安装 DSH 插件
 
-当前插件为 **`dsh-plugin-specflow@0.1.0`**，兼容 **DSH `0.2.1-rc.2`、宿主 Node.js 24+ 和本机 Git**。DSH 桌面版使用 Electron 内嵌 Node；兼容要求针对宿主进程。
+当前插件为 **`dsh-plugin-specflow@0.1.1`**，兼容 **DSH `0.2.1-rc.2`、宿主 Node.js 24+ 和本机 Git**。DSH 桌面版使用 Electron 内嵌 Node；兼容要求针对宿主进程。
 
-从 [DSH 插件 Release](https://github.com/HuYellow/specflow/releases/tag/dsh-plugin-specflow%400.1.0) 下载预构建包与 `SHA256SUMS.txt`，在 DSH 插件页选择安装第三方插件，输入下载地址或本地文件的绝对路径并启用。CLI/Web 用户可以直接安装公开包：
+从 [DSH 插件 Release](https://github.com/HuYellow/specflow/releases/tag/dsh-plugin-specflow%400.1.1) 下载预构建包与 `SHA256SUMS.txt`，在 DSH 插件页选择安装第三方插件，输入下载地址或本地文件的绝对路径并启用。CLI/Web 用户可以直接安装公开包：
 
 ```sh
-dsh plugin --profile web add https://github.com/HuYellow/specflow/releases/download/dsh-plugin-specflow%400.1.0/dsh-plugin-specflow-0.1.0.tgz
+dsh plugin --profile web add https://github.com/HuYellow/specflow/releases/download/dsh-plugin-specflow%400.1.1/dsh-plugin-specflow-0.1.1.tgz
 dsh web
 ```
 
@@ -63,9 +63,11 @@ https://raw.githubusercontent.com/HuYellow/specflow/main/market/dsh/index.json
 该索引由 Specflow 项目维护，固定到包含预构建代码的 Git 提交。当前公开安装通过 GitHub 完成，尚未发布 npm 包。源码构建方法见下文“DSH 插件构建与发布”；CI 也会保存 `dsh-plugin-specflow` 构建产物。
 
 发布包旁的 `SHA256SUMS.txt` 记录 SHA-256。Windows 用户可运行
-`Get-FileHash release/dsh/dsh-plugin-specflow-0.1.0.tgz -Algorithm SHA256` 核对下载或构建后的文件。
+`Get-FileHash release/dsh/dsh-plugin-specflow-0.1.1.tgz -Algorithm SHA256` 核对下载或构建后的文件。
 
-安装后，在 Harness 中配置模型并打开一个会话，从右侧引导页选择 **Specflow 工程工作台**。登记干净的本机 Git 仓库，配置四个角色的模型及项目验证命令，再创建工作项、运行工程流程并接纳通过检查的产物。
+安装后，在 Harness 中配置模型并打开一个会话，从右侧引导页选择 **Specflow 工程工作台**。面板会自动关联当前对话目录对应的本机 Git 工程，也可手动选择仓库。配置四个角色的模型及项目验证命令后，从干净的已提交基线创建工作项，运行工程流程并接纳通过检查的产物。
+
+更新已安装的插件时，先保存编辑并停止正在运行的 Specflow 操作，在同一 DSH profile 中卸载旧插件，再安装新版并重启 DSH。工程数据会保留；若配置过自定义 `dataDir`，重装后继续使用原值。
 
 流程页支持修改已有需求，文档页支持编辑当前修订。编辑会保留草稿并检查版本冲突；保存后的新版本需要重新验证或复核，不能继承旧版本的通过状态。
 
@@ -150,7 +152,7 @@ npm run dsh:test
 npm run dsh:pack
 ```
 
-输出为 `release/dsh/dsh-plugin-specflow-0.1.0.tgz` 和 `release/dsh/SHA256SUMS.txt`。发布包只包含预构建 Host、浏览器客户端、配置层、说明和许可证；浏览器使用 DSH 提供的 React。插件版本由 `plugins/deepseek-specflow/package.json` 独立维护，插件报告的版本号和发布清单使用同一来源。
+输出为 `release/dsh/dsh-plugin-specflow-0.1.1.tgz` 和 `release/dsh/SHA256SUMS.txt`。发布包只包含预构建 Host、浏览器客户端、配置层、说明和许可证；浏览器使用 DSH 提供的 React。插件版本由 `plugins/deepseek-specflow/package.json` 独立维护，插件报告的版本号和发布清单使用同一来源。
 
 GitHub 公开发布使用 `codex/dsh-distribution` 预构建分支和 `dsh-plugin-specflow@<版本>` 标签，独立于桌面版 Release。分发包只保留运行文件；市场索引固定到对应的 Git 提交。
 
@@ -167,7 +169,7 @@ npm publish --dry-run
 npm publish --access public
 ```
 
-只有公开 npm 包发布后，才可把安装来源替换为 `dsh-plugin-specflow@0.1.0`。插件安装与运行约定见 [插件 README](plugins/deepseek-specflow/README.md)，实现与验收见 [插件交付说明](docs/implementation/dsh-plugin.md)。
+只有公开 npm 包发布后，才可把安装来源替换为 `dsh-plugin-specflow@0.1.1`。插件安装与运行约定见 [插件 README](plugins/deepseek-specflow/README.md)，实现与验收见 [插件交付说明](docs/implementation/dsh-plugin.md)。
 
 ## 验证
 

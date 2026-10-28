@@ -98,11 +98,13 @@ Windows supports in-place updates through the app's Help menu. For current macOS
 
 Run the same engineering core in a **Specflow** tab beside your DSH conversation, using the models configured in your host.
 
-**[Download the plugin](https://github.com/HuYellow/specflow/releases/tag/dsh-plugin-specflow%400.1.0)** · [Plugin guide](plugins/deepseek-specflow/README.md)
+**[Download the plugin](https://github.com/HuYellow/specflow/releases/tag/dsh-plugin-specflow%400.1.1)** · [Plugin guide](plugins/deepseek-specflow/README.md)
 
 Requires **DSH `0.2.1-rc.2`**, **host Node.js 24+**, and **local Git**. The desktop app, Maka, and OpenCode are not required. Other DSH versions need separate validation.
 
-Install the prebuilt `.tgz` through DSH's third-party plugin manager, enable it, and open the Specflow workbench in the right sidebar. Register your repository, assign role models and verification commands, and create a work item.
+Install the prebuilt `.tgz` through DSH's third-party plugin manager, enable it, and open the Specflow workbench in the right sidebar. The panel links the current conversation's repository automatically; you can also select a repository manually. Assign role models and verification commands, then create a work item.
+
+To update an installed plugin, save edits and stop active Specflow operations, uninstall it in the same DSH profile, install the new package, and restart DSH. Engineering data is retained. If you configured a custom `dataDir`, keep that value after reinstalling.
 
 <details>
 <summary>CLI installation and custom plugin market</summary>
@@ -110,7 +112,7 @@ Install the prebuilt `.tgz` through DSH's third-party plugin manager, enable it,
 For the CLI/Web profile:
 
 ```sh
-dsh plugin --profile web add https://github.com/HuYellow/specflow/releases/download/dsh-plugin-specflow%400.1.0/dsh-plugin-specflow-0.1.0.tgz
+dsh plugin --profile web add https://github.com/HuYellow/specflow/releases/download/dsh-plugin-specflow%400.1.1/dsh-plugin-specflow-0.1.1.tgz
 dsh web
 ```
 

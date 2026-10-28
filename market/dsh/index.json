@@ -46,12 +46,12 @@
       },
       "versions": [
         {
-          "version": "0.1.0",
-          "publishTimestamp": 1792568280,
+          "version": "0.1.1",
+          "publishTimestamp": 1793177855,
           "source": {
             "type": "git",
             "url": "https://github.com/HuYellow/specflow.git",
-            "commit": "4c6e4f2cdd65054bfc0c607a921cb41a00886659",
+            "commit": "c945bafc2041d1a5ac602a1daa179ae41da28476",
             "path": "plugins/deepseek-specflow"
           },
           "engines": {

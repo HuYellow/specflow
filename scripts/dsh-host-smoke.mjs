@@ -40,7 +40,8 @@ async function runSmoke() {
     && !/^git\+https:\/\/github\.com\/HuYellow\/specflow\.git#[0-9a-f]{40}&path:\/plugins\/deepseek-specflow$/.test(publicSource)) {
     throw new Error('Public smoke source must be a Specflow GitHub release asset or commit-pinned distribution package.');
   }
-  const artifact = publicSource ?? resolve(option('--package', process.env.SPECFLOW_DSH_PACKAGE ?? join(repo, 'release', 'dsh', 'dsh-plugin-specflow-0.1.0.tgz')));
+  const plugin = JSON.parse(await readFile(join(repo, 'plugins', 'deepseek-specflow', 'package.json'), 'utf8'));
+  const artifact = publicSource ?? resolve(option('--package', process.env.SPECFLOW_DSH_PACKAGE ?? join(repo, 'release', 'dsh', `${plugin.name}-${plugin.version}.tgz`)));
   if (!publicSource) await access(artifact);
   const root = await mkdtemp(join(tmpdir(), 'specflow-dsh-smoke-'));
   const home = join(root, 'home'), profileDir = join(home, 'profiles', profileName);
@@ -88,7 +89,7 @@ async function runPhase(phase, root) {
   process.chdir(root);
   const home = join(root, 'home');
   assert.equal(process.env.DSH_HOME, home);
-  await assertRuntimeCompatibility(join(home, 'profiles', profileName));
+  const pluginVersion = await assertRuntimeCompatibility(join(home, 'profiles', profileName));
   const { runProfile } = await load('@deepseek-ai/dsh', 'lib/profile-boot.js');
   const { createLaunchEnvironmentSnapshot } = await load('@deepseek-ai/dsh-launch-environment');
   const environment = createLaunchEnvironmentSnapshot([{ source: 'process', values: Object.fromEntries(Object.entries(process.env).filter(([, value]) => value !== undefined)) }]);
@@ -128,6 +129,7 @@ async function runPhase(phase, root) {
     const read = request => rpc('specflow/read', request);
     const command = (operation, input = {}, id, idempotencyKey = crypto.randomUUID()) => rpc('specflow/command', { operation, input, id, idempotencyKey });
     let bootstrap = await read({ resource: 'bootstrap' });
+    assert.equal(bootstrap.version, pluginVersion, 'The active host must report the installed plugin release');
     assert.equal(bootstrap.canWrite, true);
     if (phase === 'first') {
       assert.equal(bootstrap.projects.length, 0);
@@ -160,7 +162,7 @@ async function runPhase(phase, root) {
     const guestResponse = await connection.createSharedFetchHandler('/api').fetch(new Request('http://127.0.0.1/api/specflow/read', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ type: 'client-request', rpcId: 'guest-read', method: 'specflow/read', payload: { resource: 'bootstrap' } }) }), guest);
     assert.equal(guestResponse.status, 403, 'Connection must reject non-owner Peers before exact route dispatch');
     const profileIdentity = JSON.parse(await readFile(join(home, 'specflow', 'profile.json'), 'utf8'));
-    const report = { phase, instanceId: profileIdentity.instanceId, projectId: project.id, workItemId: item.id, hostEntry: 'active', clientEntry: client.id, clientBytes: js.length, anonymousHttpRejected: true, guestRpcRejected: true, nodes: snapshot.nodes.length };
+    const report = { phase, pluginVersion, instanceId: profileIdentity.instanceId, projectId: project.id, workItemId: item.id, hostEntry: 'active', clientEntry: client.id, clientBytes: js.length, anonymousHttpRejected: true, guestRpcRejected: true, nodes: snapshot.nodes.length };
     await shutdown.shutdown(0);
     assert.equal(await exists(join(home, 'specflow', 'host.lock')), false, 'Native shutdown must release profile ownership');
     await writeFile(join(root, `${phase}.json`), JSON.stringify({ ...report, cleanShutdown: true }, null, 2));
@@ -171,7 +173,10 @@ async function exists(path) { try { await access(path); return true; } catch { r
 async function assertRuntimeCompatibility(profileDir) {
   const actual = JSON.parse(await readFile(join(packageDir('@deepseek-ai/dsh'), 'package.json'), 'utf8')).version;
   const installed = JSON.parse(await readFile(join(profileDir, 'node_modules', 'dsh-plugin-specflow', 'package.json'), 'utf8'));
+  const expected = JSON.parse(await readFile(join(repo, 'plugins', 'deepseek-specflow', 'package.json'), 'utf8'));
   assert.equal(actual, installed.engines.dsh, 'The release smoke must use the exact DSH release declared by the installed plugin');
+  assert.equal(installed.version, expected.version, 'The release smoke must install the current plugin release');
+  return installed.version;
 }
 async function git(cwd, args) {
   return await new Promise((done, reject) => {
