@@ -5,6 +5,7 @@ Specflow 的插件独立于桌面安装包公开分发。当前版本为 `dsh-pl
 
 ## 用户安装入口
 
+- [npm 包主页](https://www.npmjs.com/package/dsh-plugin-specflow)
 - [插件 Release](https://github.com/HuYellow/specflow/releases/tag/dsh-plugin-specflow%400.1.1)
 - [预构建安装包](https://github.com/HuYellow/specflow/releases/download/dsh-plugin-specflow%400.1.1/dsh-plugin-specflow-0.1.1.tgz)
 - [DSH 市场索引](https://raw.githubusercontent.com/HuYellow/specflow/main/market/dsh/index.json)
@@ -13,12 +14,16 @@ Specflow 的插件独立于桌面安装包公开分发。当前版本为 `dsh-pl
 索引由 Specflow 项目维护，使用 DSH 官方 format 1，并明确版本和兼容范围。
 索引的 Git 来源固定到真实分发提交，不会跟随分支后续变动。
 
-CLI/Web 也可直接安装预构建包：
+在 DSH 的 **安装第三方插件** 入口输入 `dsh-plugin-specflow@0.1.1`。
+CLI/Web 可安装相同固定版本：
 
 ```sh
-dsh plugin --profile web add https://github.com/HuYellow/specflow/releases/download/dsh-plugin-specflow%400.1.1/dsh-plugin-specflow-0.1.1.tgz
+dsh plugin --profile web add dsh-plugin-specflow@0.1.1
 dsh web
 ```
+
+GitHub 预构建安装包仍可使用：在安装入口输入上述 `.tgz` 下载地址，
+或运行 `dsh plugin --profile web add <安装包下载地址或本地绝对路径>`。
 
 停用和卸载使用同一 profile 的插件管理入口，CLI 命令为
 `dsh plugin --profile web remove dsh-plugin-specflow`。工程数据默认保留。
@@ -38,7 +43,8 @@ profile 中卸载旧插件，再安装新版并重启 DSH。工程数据库、�
 标签，让生成器优先选择已发布分发提交。
 
 Release 不设为仓库的 Latest，桌面应用的最新版本入口继续指向桌面 Release。
-公开发布当前使用 GitHub；npm 包尚未发布，不能使用裸包名安装。
+当前公开分发包含 npm、GitHub 安装包和固定提交的 Git 来源。
+安装命令使用 `dsh-plugin-specflow@0.1.1` 固定版本；市场索引继续使用 Git 分发提交。
 
 ## 发布下一版本
 
@@ -50,6 +56,13 @@ Release 不设为仓库的 Latest，桌面应用的最新版本入口继续指�
 6. 在 GitHub 发布该标签的 Release，上传 `.tgz` 和 `SHA256SUMS.txt`。
 7. 以真实分发提交与发布时间生成索引，提交并推送 `main`。
 8. 从公开下载地址和索引的 Git 来源分别验证安装、宿主激活与重启。
+
+如同步发布下一版本到 npm，使用具有发布权限的账号，将第 2 步已验收的同一 `.tgz`
+上传到 `https://registry.npmjs.org/`，发布时使用 `--access=public --ignore-scripts`。
+按 npm 提示完成账号双重验证或浏览器授权。npm 返回成功后可能需要短暂处理，
+应等到 `npm view dsh-plugin-specflow@<新版本> version --registry=https://registry.npmjs.org`
+返回新版本，再更新安装说明或其他分发入口。同一包名和版本不能重复发布。
+npm 包与 GitHub 安装包应保持相同字节；市场来源仍可保留固定提交的 Git 分发。
 
 索引生成示例（命令中的提交和时间需替换为真实值）：
 
@@ -105,6 +118,8 @@ node scripts/dsh-host-smoke.mjs --source <Release地址或索引中的固定Git�
   认证、工程关联、重启与锁清理验收。验收使用独立临时 profile。
 - 市场索引采用上述实际发布时间并固定到分发提交，经过官方 DSH 0.2.1-rc.2 校验。
   插件 Release 不设为 Latest，桌面更新入口继续使用 `desktop-v0.2.0`。
+- 2026-10-28 20:47:03（Asia/Shanghai），同一安装包已在公共 npm 仓库发布为
+  `dsh-plugin-specflow@0.1.1`，`latest` 指向 `0.1.1`；仓库记录的 tarball 完整性与 GitHub 安装包一致。
 
 ## 0.1.0 公开发布记录
 

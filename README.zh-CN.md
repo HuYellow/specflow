@@ -23,7 +23,7 @@ SpecFlow 是面向本地 Git 仓库的软件工程工作台，提供独立桌面
 | 使用方式 | 操作入口 | 模型执行 | 安装与数据 |
 | --- | --- | --- | --- |
 | 独立桌面版 | SpecFlow 工程窗口 | 默认内置 Maka；可连接本机 OpenCode | 平台安装包；工程数据位于桌面应用数据目录 |
-| DSH 插件 | Harness 会话右侧的 Specflow 标签 | 使用 Harness 中配置的模型，按尝试创建独立会话 | 公开 `.tgz` / 固定提交的 Git 插件包；默认数据目录为 `$DSH_HOME/specflow` |
+| DSH 插件 | Harness 会话右侧的 Specflow 标签 | 使用 Harness 中配置的模型，按尝试创建独立会话 | 公共 npm 包 / GitHub `.tgz` / 固定提交的 Git 插件包；默认数据目录为 `$DSH_HOME/specflow` |
 
 桌面版与插件共享 `packages/specflow-core` 中的流程和接纳规则，分别构建和发布。插件源码、依赖锁文件与发布清单位于 `plugins/deepseek-specflow`。已有桌面数据不会自动迁移到插件。
 
@@ -47,10 +47,12 @@ SpecFlow 是面向本地 Git 仓库的软件工程工作台，提供独立桌面
 
 当前插件为 **`dsh-plugin-specflow@0.1.1`**，兼容 **DSH `0.2.1-rc.2`、宿主 Node.js 24+ 和本机 Git**。DSH 桌面版使用 Electron 内嵌 Node；兼容要求针对宿主进程。
 
-从 [DSH 插件 Release](https://github.com/HuYellow/specflow/releases/tag/dsh-plugin-specflow%400.1.1) 下载预构建包与 `SHA256SUMS.txt`，在 DSH 插件页选择安装第三方插件，输入下载地址或本地文件的绝对路径并启用。CLI/Web 用户可以直接安装公开包：
+插件已发布到公共 npm 仓库。在 DSH 的 **插件 → 安装第三方插件** 中输入 `dsh-plugin-specflow@0.1.1`，安装后启用。录入平台若接受公共 **npm 包 URL**，可填写包详情页地址：[https://www.npmjs.com/package/dsh-plugin-specflow](https://www.npmjs.com/package/dsh-plugin-specflow)。
+
+CLI/Web 用户可以安装指定版本：
 
 ```sh
-dsh plugin --profile web add https://github.com/HuYellow/specflow/releases/download/dsh-plugin-specflow%400.1.1/dsh-plugin-specflow-0.1.1.tgz
+dsh plugin --profile web add dsh-plugin-specflow@0.1.1
 dsh web
 ```
 
@@ -60,7 +62,7 @@ dsh web
 https://raw.githubusercontent.com/HuYellow/specflow/main/market/dsh/index.json
 ```
 
-该索引由 Specflow 项目维护，固定到包含预构建代码的 Git 提交。当前公开安装通过 GitHub 完成，尚未发布 npm 包。源码构建方法见下文“DSH 插件构建与发布”；CI 也会保存 `dsh-plugin-specflow` 构建产物。
+该索引由 Specflow 项目维护，安装来源仍固定到包含预构建代码的 Git 提交。也可从 [DSH 插件 Release](https://github.com/HuYellow/specflow/releases/tag/dsh-plugin-specflow%400.1.1) 下载预构建 `.tgz` 和 `SHA256SUMS.txt`，在 DSH 安装入口填写下载地址或本地文件的绝对路径。源码构建方法见下文“DSH 插件构建与发布”；CI 也会保存 `dsh-plugin-specflow` 构建产物。
 
 发布包旁的 `SHA256SUMS.txt` 记录 SHA-256。Windows 用户可运行
 `Get-FileHash release/dsh/dsh-plugin-specflow-0.1.1.tgz -Algorithm SHA256` 核对下载或构建后的文件。
@@ -161,15 +163,9 @@ npm run dsh:distribution
 npm run dsh:market -- validate
 ```
 
-完整的发布、索引生成与公开安装验证步骤见 [DSH 生态发布说明](docs/implementation/dsh-publication.md)。需要改为 npm 分发时，在插件目录使用发布者的 npm 账号执行：
+`dsh-plugin-specflow@0.1.1` 已公开发布到 [npm](https://www.npmjs.com/package/dsh-plugin-specflow)。后续版本先更新插件版本、完成验证并生成安装包，再使用发布者账号将同一预构建包上传到 npm；已发布的版本不能覆盖。
 
-```sh
-cd plugins/deepseek-specflow
-npm publish --dry-run
-npm publish --access public
-```
-
-只有公开 npm 包发布后，才可把安装来源替换为 `dsh-plugin-specflow@0.1.1`。插件安装与运行约定见 [插件 README](plugins/deepseek-specflow/README.md)，实现与验收见 [插件交付说明](docs/implementation/dsh-plugin.md)。
+完整的发布、索引生成与公开安装验证步骤见 [DSH 生态发布说明](docs/implementation/dsh-publication.md)。插件安装与运行约定见 [插件 README](plugins/deepseek-specflow/README.md)，实现与验收见 [插件交付说明](docs/implementation/dsh-plugin.md)。
 
 ## 验证
 
