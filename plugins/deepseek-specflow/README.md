@@ -14,8 +14,8 @@ DeepSeek Harness。安装后，在一个已打开的会话右侧添加 **Specflo
 
 ## 安装
 
-公开版本见 [Specflow DSH 插件 0.1.0](https://github.com/HuYellow/specflow/releases/tag/dsh-plugin-specflow%400.1.0)。
-下载 [预构建安装包](https://github.com/HuYellow/specflow/releases/download/dsh-plugin-specflow%400.1.0/dsh-plugin-specflow-0.1.0.tgz)
+公开版本见 [Specflow DSH 插件 0.1.1](https://github.com/HuYellow/specflow/releases/tag/dsh-plugin-specflow%400.1.1)。
+下载 [预构建安装包](https://github.com/HuYellow/specflow/releases/download/dsh-plugin-specflow%400.1.1/dsh-plugin-specflow-0.1.1.tgz)
 和同一 Release 的 `SHA256SUMS.txt`。在 DSH 的插件页选择安装第三方插件，输入发布包的
 HTTPS 地址或下载后的绝对路径。审核安装来源后启用插件。
 桌面版请使用自身的插件管理入口，以便安装到桌面版管理的 profile。
@@ -23,11 +23,22 @@ HTTPS 地址或下载后的绝对路径。审核安装来源后启用插件。
 CLI/Web 用户也可以安装到 Web profile：
 
 ```sh
-dsh plugin --profile web add https://github.com/HuYellow/specflow/releases/download/dsh-plugin-specflow%400.1.0/dsh-plugin-specflow-0.1.0.tgz
+dsh plugin --profile web add https://github.com/HuYellow/specflow/releases/download/dsh-plugin-specflow%400.1.1/dsh-plugin-specflow-0.1.1.tgz
 dsh web
 ```
 
 当前公开来源为 GitHub 预构建包和固定提交的 Git 分发，尚未发布到 npm。
+
+### 更新已安装的插件
+
+DSH 的第三方插件通过卸载后重新安装更新。先保存编辑并停止正在运行的 Specflow 操作，
+在同一 profile 的 **插件 → 已安装** 中卸载旧插件，再通过 **安装第三方插件** 安装新版
+预构建包，启用后重启 DSH。也可从已刷新索引的“发现”页选择新版安装。
+工程数据库、执行日志和隔离工作区会保留；若配置过自定义 `dataDir`，重装后继续使用原值。
+
+`0.1.1` 会自动关联当前对话的 Git 工程，并跟随对话目录变化。已有工程和 Specflow 工作区
+复用原记录，手动选择不受普通刷新覆盖；未保存的正文、澄清答案、工程配置和运行回答会
+阻止自动切换，直到保存、提交或取消编辑。
 
 ### 从“发现”页安装
 
@@ -50,7 +61,7 @@ CLI/Web 用户也可执行 `dsh plugin --profile web remove dsh-plugin-specflow`
 ## 使用
 
 1. 在 Harness 配置模型并打开一个会话。
-2. 打开右侧 Specflow 标签，登记本机 Git 仓库的绝对路径。
+2. 打开右侧 Specflow 标签，插件会自动读取当前对话的工作目录，关联并登记对应的本机 Git 仓库。已有工程会复用原记录；目录位于 Specflow 工作项或候选工作区时，会回到原工程及工作项。
 3. 在工程设置中选择分析、设计、实现和复核模型，并配置项目真实的验证命令。
 4. 创建工作项，输入需求。源仓库须有干净的已提交基线。
 5. 按流程运行规格、澄清、计划、任务、实现和复核。文档接纳与最终代码接纳由用户操作。
@@ -58,6 +69,11 @@ CLI/Web 用户也可执行 `dsh plugin --profile web remove dsh-plugin-specflow`
 
 模型查询工具 `specflow_query` 只读，限制在调用会话所属的仓库，不提供人工接纳操作。
 模型完成不等于工程通过：原有输入版本、新鲜度、双视角复核和验证门槛继续生效。
+
+切换对话或改变对话工作目录后，面板会关联对应工程。手动选择其他工程后，普通刷新不会
+覆盖该选择；下一次对话目录变化时恢复自动关联。有未保存的编辑时，会等待保存或取消。
+当前对话没有工作目录，或目录不是有提交记录的 Git 仓库时，可继续手动选择工程或通过
+「打开仓库」登记。自动关联只登记工程，不会创建需求、启动执行或提交源仓库改动。
 
 需求和文档编辑以开始编辑时的版本为基线。轮询不会覆盖尚未保存的草稿；其他窗口或
 执行任务更新了同一内容时，编辑器会提示冲突并展示最新内容，保留草稿供比较。
@@ -102,7 +118,7 @@ npm run dsh:test
 npm run dsh:pack
 ```
 
-产物为 `release/dsh/dsh-plugin-specflow-0.1.0.tgz` 和 `SHA256SUMS.txt`。
+产物为 `release/dsh/dsh-plugin-specflow-0.1.1.tgz` 和 `SHA256SUMS.txt`。
 包内容采用白名单检查，仅包含预构建 Host、浏览器工厂、配置层、说明和许可证。
 源代码、测试、缓存、Electron、Maka、OpenCode 和其他本机数据不会进入包。
 浏览器使用 DSH 共享的 React，未打入第二份 React。

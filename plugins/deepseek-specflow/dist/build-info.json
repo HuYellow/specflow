@@ -1,19 +1,19 @@
 {
   "schemaVersion": 1,
   "name": "dsh-plugin-specflow",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "compatibility": {
     "dsh": "0.2.1-rc.2",
     "node": ">=24"
   },
   "artifacts": {
     "index.mjs": {
-      "bytes": 1548574,
-      "sha256": "8e026db464d90e2570d767863d902428e0cef3ca494f1458b8087ff8030bb706"
+      "bytes": 1929710,
+      "sha256": "d70d1dbad488c3d7b5a711abdfb5558b458c731fbdf5453d216467581e1577db"
     },
     "client.js": {
-      "bytes": 103781,
-      "sha256": "47d4373fa1c46bb22c4d2b9f37291925b89263cb9908235c66ef8e3676d048d1"
+      "bytes": 351075,
+      "sha256": "443115ea60db2df3de58049a05ccde7880d6d0887f40ee51863005fc3250c715"
     }
   }
 }
