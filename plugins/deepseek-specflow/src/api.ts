@@ -1,9 +1,10 @@
 import { z } from 'zod';
+import { realpath } from 'node:fs/promises';
 import { DomainError, hash } from '../../../packages/domain/index.ts';
 import type { EngineeringService } from '../../../packages/specflow-core/index.ts';
 import { clientRequestSchema, type ConnectionFetchRoute } from '@deepseek-ai/dsh-client-connection';
 import { commandOperations, COMMAND_ENDPOINT, PLUGIN_VERSION, READ_ENDPOINT, readResources } from './protocol.ts';
-import type { SpecflowBootstrap } from './protocol.ts';
+import type { SpecflowBootstrap, SpecflowProjectAssociation } from './protocol.ts';
 import { normalizeLocale, translate, type Locale } from '../../../packages/i18n/index.ts';
 import { localizeApiResponse } from '../../../apps/server/src/localization.ts';
 
@@ -83,6 +84,10 @@ export class SpecflowApi {
   private async execute(operation: typeof commandOperations[number], rawId: string | undefined, input: unknown, locale: Locale): Promise<unknown> {
     const id = () => entityId.parse(rawId);
     switch (operation) {
+      case 'associateProject': {
+        const body = z.object({ rootPath: z.string().min(1).max(4000) }).strict().parse(input);
+        return this.associateProject(body.rootPath, locale);
+      }
       case 'registerProject': {
         const body = z.object({ rootPath: z.string().min(1).max(4000), name: z.string().min(1).max(200).optional() }).strict().parse(input);
         return this.service.registerProject(body.rootPath, body.name, false, locale);
@@ -167,6 +172,37 @@ export class SpecflowApi {
         return this.service.resolveFinding(id(), body.status, body.reason, body.evidenceId);
       }
     }
+  }
+
+  private async associateProject(rootPath: string, locale: Locale): Promise<SpecflowProjectAssociation> {
+    let repository: Awaited<ReturnType<EngineeringService['workspaces']['inspect']>>;
+    try { repository = await this.service.workspaces.inspect(rootPath); }
+    catch (error) {
+      if (['ENOENT', 'ENOTDIR', 'EACCES', 'EPERM'].includes((error as NodeJS.ErrnoException).code ?? '')) {
+        throw new DomainError('PROJECT_DIRECTORY_UNAVAILABLE', '当前会话的工程目录不可用，请打开其他本地 Git 仓库。', 400);
+      }
+      throw error;
+    }
+    const identity = (path: string) => process.platform === 'win32' ? path.toLowerCase() : path;
+    const canonical = identity(repository.rootPath);
+    const matches = async (path: string): Promise<boolean> => {
+      try { return canonical === identity(await realpath(path)); }
+      catch { return false; } // Deleted historical workspaces cannot own the current directory.
+    };
+    for (const project of this.service.store.list('projects')) {
+      if (await matches(project.rootPath)) return { project };
+    }
+    // Specflow worktrees retain their original project identity. An unrelated
+    // Git worktree is registered independently, even when it shares a common dir.
+    const items = this.service.store.list('workItems');
+    for (const item of items) {
+      if (await matches(item.workspace)) return { project: this.service.store.get('projects', item.projectId), workItemId: item.id };
+    }
+    for (const candidate of this.service.store.list('candidates')) {
+      const item = items.find(item => item.id === candidate.workItemId);
+      if (item && await matches(candidate.workspace)) return { project: this.service.store.get('projects', item.projectId), workItemId: item.id };
+    }
+    return { project: await this.service.registerProject(repository.rootPath, undefined, false, locale) };
   }
 }
 

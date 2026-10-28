@@ -16,7 +16,7 @@ import { ExecutionFacts } from '../../../apps/web/src/ExecutionFacts.tsx';
 import { VerificationRecovery } from '../../../apps/web/src/VerificationRecovery.tsx';
 import {
   commandSpecflow, readSpecflow, type CommandOperation, type SpecflowArtifactReading,
-  type SpecflowBootstrap, type SpecflowConnection, type SpecflowReadRequest, type SpecflowSnapshot,
+  type SpecflowBootstrap, type SpecflowConnection, type SpecflowProjectAssociation, type SpecflowReadRequest, type SpecflowSnapshot,
 } from './protocol.ts';
 import stylesheet from './client.css?inline';
 
@@ -87,8 +87,19 @@ function Badge({ value, children }: { value: string; children?: ReactNode }) {
 }
 
 /** Reads stop when the host hides this session or tab; closing never implicitly stops a durable attempt. */
-export function SpecflowPanel({ connection, sessionId, useTabInfo }: PanelProps): ReactNode {
+export function SpecflowPanel(props: PanelProps): ReactNode {
+  // A reused host seat must not carry selection, drafts or write guards to another chat.
+  return <SessionPanel key={props.sessionId} {...props} />;
+}
+
+function SessionPanel({ connection, sessionId, useTabInfo, useSessions, useSession, useProjection }: PanelProps): ReactNode {
   const locale = useLocale();
+  const originalCwd = useSessions((state: { byId: Readonly<Record<string, { cwd?: string } | undefined>> }) => state.byId[sessionId]?.cwd) as string | undefined;
+  const sessionOpen = useSession((state: { openState: string }) => state.openState === 'open') as boolean;
+  // DSH 0.2.1-rc.2 publishes this optional projection from working-directory.
+  // Read the structural port without importing its Host-only Context declarations.
+  const projectedCwd = (useProjection as (key: string) => unknown)('workingDirectory');
+  const cwd = typeof projectedCwd === 'string' && projectedCwd ? projectedCwd : originalCwd;
   const [languageError, setLanguageError] = useState(false);
   const { tab } = useTabInfo();
   const storageKey = pendingKey(sessionId);
@@ -101,11 +112,19 @@ export function SpecflowPanel({ connection, sessionId, useTabInfo }: PanelProps)
   const [error, setError] = useState(previousWrite ? "上次写入的结果尚未确认，请刷新并核对工程记录后继续。" : ''), [notice, setNotice] = useState('');
   const [uncertain, setUncertain] = useState(!!previousWrite), [refreshKey, setRefreshKey] = useState(0);
   const [form, setForm] = useState<'project' | 'item' | undefined>();
-  const [editing, setEditing] = useState({ requirements: false, artifact: false });
+  const [editing, setEditing] = useState<Record<string, boolean>>({});
+  const reportDraft = useCallback((kind: string, value: boolean) => setEditing(current => current[kind] === value ? current : { ...current, [kind]: value }), []);
+  const [association, setAssociation] = useState<{ cwd?: string; linked?: boolean; failed?: boolean }>({});
+  const handledContext = useRef<string | undefined>(undefined), context = useRef(cwd);
+  context.current = cwd;
   const alive = useRef(true), lock = useRef(false), selection = useRef({ projectId, itemId });
   const uncertainWrite = useRef(!!previousWrite), explicitRefresh = useRef(false);
   const controlsId = useId();
-  selection.current = { projectId, itemId };
+  if (selection.current.projectId !== projectId || selection.current.itemId !== itemId) selection.current = { projectId, itemId };
+  const select = (projectId: string, itemId = '') => {
+    selection.current = { projectId, itemId };
+    setProjectId(projectId); setItemId(itemId); setSnapshot(undefined);
+  };
   const lifetime = useRef<AbortController | undefined>(undefined);
   if (!lifetime.current) lifetime.current = new AbortController();
   const read = useCallback<Read>((request, signal) => readSpecflow(connection, { ...request, locale }, AbortSignal.any([lifetime.current!.signal, tab.signal, ...(signal ? [signal] : [])])), [connection, tab.signal, locale]);
@@ -115,23 +134,25 @@ export function SpecflowPanel({ connection, sessionId, useTabInfo }: PanelProps)
     if (lifetime.current?.signal.aborted) lifetime.current = new AbortController();
     return () => { alive.current = false; lifetime.current?.abort(); };
   }, []);
-  useEffect(() => { setEditing({ requirements: false, artifact: false }); }, [projectId, itemId]);
+  useEffect(() => { setEditing({}); }, [projectId, itemId]);
   useEffect(() => {
     if (!tab.visible) return;
     let current = true, timer: ReturnType<typeof setTimeout> | undefined;
     const controller = new AbortController();
     const sync = async () => {
+      const requestedSelection = selection.current;
       try {
         const initial = await read<SpecflowBootstrap>({ resource: 'bootstrap' }, controller.signal);
         if (!current) return;
+        if (selection.current !== requestedSelection) return;
         setBootstrap(initial);
         const selected = selection.current;
-        const project = initial.projects.find(project => project.id === selected.projectId) ?? initial.projects[0];
+        const project = initial.projects.find(project => project.id === selected.projectId) ?? (cwd ? undefined : initial.projects[0]);
         const items = initial.workItems.filter(item => item.projectId === project?.id);
         const item = items.find(item => item.id === selected.itemId) ?? items[0];
         setProjectId(project?.id ?? ''); setItemId(item?.id ?? '');
         const value = item ? await read<SpecflowSnapshot>({ resource: 'snapshot', id: item.id }, controller.signal) : undefined;
-        if (!current) return;
+        if (!current || selection.current !== requestedSelection) return;
         setSnapshot(value); setLoading(false);
         if (!uncertainWrite.current || explicitRefresh.current) {
           const confirmed = explicitRefresh.current;
@@ -146,64 +167,94 @@ export function SpecflowPanel({ connection, sessionId, useTabInfo }: PanelProps)
     };
     void sync();
     return () => { current = false; controller.abort(); if (timer) clearTimeout(timer); };
-  }, [read, tab.visible, projectId, itemId, refreshKey]);
+  }, [read, tab.visible, projectId, itemId, refreshKey, cwd]);
 
-  const command: Command = async (operation, id, input) => {
+  const command = async (operation: CommandOperation, id?: string, input?: unknown, quiet = false): Promise<unknown> => {
     if (lock.current || uncertain || !tab.visible || !bootstrap?.canWrite) throw new Error(t("请先刷新工程状态，再执行操作。"));
     lock.current = true; setBusy(true); setError(''); setNotice('');
     const pending: PendingWrite = { operation, id, idempotencyKey: crypto.randomUUID(), startedAt: new Date().toISOString() };
     rememberWrite(connection, storageKey, pending);
+    const clearPending = () => {
+      if (rememberedWrite(connection, storageKey)?.idempotencyKey === pending.idempotencyKey) rememberWrite(connection, storageKey);
+    };
     try {
       const result = await commandSpecflow(connection, { operation, id, input, locale: getLocale(), idempotencyKey: pending.idempotencyKey }, AbortSignal.any([lifetime.current!.signal, tab.signal]));
-      rememberWrite(connection, storageKey);
-      if (alive.current) { setNotice("操作已记录，正在同步工程状态。"); setRefreshKey(value => value + 1); }
+      clearPending();
+      if (alive.current) { if (!quiet) setNotice("操作已记录，正在同步工程状态。"); setRefreshKey(value => value + 1); }
       return result;
     } catch (error) {
       const failure = error as { code?: string; details?: { status?: unknown } };
       const status = failure?.details?.status;
       const rejected = failure?.code === 'INVALID_REQUEST' || typeof status === 'number' && status >= 400 && status < 500;
       const unknown = !rejected;
-      if (!unknown) rememberWrite(connection, storageKey);
+      if (!unknown) clearPending();
       if (alive.current) {
         setUncertain(unknown); uncertainWrite.current = unknown;
-        setError(`${errorMessage(error)}${unknown ? ` ${t('写入结果尚未确认，请刷新并核对运行记录。')}` : ''}`);
+        if (!quiet || unknown) setError(`${errorMessage(error)}${unknown ? ` ${t('写入结果尚未确认，请刷新并核对运行记录。')}` : ''}`);
       }
       throw error;
     } finally { lock.current = false; if (alive.current) setBusy(false); }
   };
-  const refresh = () => { explicitRefresh.current = true; setLoading(true); setRefreshKey(value => value + 1); };
+  const refresh = () => { if (association.failed) handledContext.current = undefined; explicitRefresh.current = true; setLoading(true); setRefreshKey(value => value + 1); };
   const run = (operation: CommandOperation, id?: string, input?: unknown) => { void command(operation, id, input).catch(() => {}); };
-  const disabled = busy || uncertain || !bootstrap?.canWrite || !tab.visible || !!error;
+  const hasDraft = Object.values(editing).some(Boolean);
+  const contextPending = !!cwd && handledContext.current !== cwd;
+  const writesBlocked = busy || uncertain || !bootstrap?.canWrite || !tab.visible || !!error;
+  const disabled = writesBlocked || contextPending && !hasDraft && !form;
   const project = bootstrap?.projects.find(project => project.id === projectId);
   const items = bootstrap?.workItems.filter(item => item.projectId === projectId) ?? [];
   const current = snapshot?.item.id === itemId ? snapshot : undefined;
-  const hasDraft = editing.requirements || editing.artifact;
   const pending = current?.clarifications.filter(clarification => clarification.state === 'waiting_answers').length ?? 0;
   const pendingInteractions = current?.interactions.filter(interaction => interaction.state === 'pending') ?? [];
+
+  useEffect(() => {
+    // Wait for the projection baseline before falling back to the immutable header cwd.
+    if (!sessionOpen || !cwd || handledContext.current === cwd || !bootstrap?.canWrite || !tab.visible || busy || uncertain || error || hasDraft || form) return;
+    const directory = cwd;
+    handledContext.current = directory;
+    setAssociation({ cwd: directory });
+    select('');
+    void command('associateProject', undefined, { rootPath: directory }, true).then(value => {
+      if (!alive.current || context.current !== directory) return;
+      const result = value as SpecflowProjectAssociation;
+      setBootstrap(previous => previous && ({ ...previous, projects: [...previous.projects.filter(project => project.id !== result.project.id), result.project] }));
+      select(result.project.id, result.workItemId);
+      setAssociation({ cwd: directory, linked: true });
+    }).catch(() => {
+      if (alive.current && context.current === directory) setAssociation({ cwd: directory, failed: true });
+    });
+  }, [sessionOpen, cwd, bootstrap?.canWrite, tab.visible, busy, uncertain, error, hasDraft, form, refreshKey]);
+
+  const chooseProject = (id: string) => {
+    handledContext.current = cwd;
+    setAssociation({ cwd });
+    select(id);
+  };
 
   return <div className="sf-workbench" lang={locale} data-specflow-panel data-session-id={sessionId} aria-busy={loading || busy}>
     <header className="sf-header"><div><span className="sf-brand-mark" aria-hidden="true">S</span><strong>Specflow<span>.</span></strong></div><div><select className="sf-language" aria-label={t('界面语言')} value={locale} disabled={busy} onChange={event => { setLanguageError(false); void setLocale(event.target.value as Locale, { updateDocument: false }).catch(() => setLanguageError(true)); }}><option value="zh-CN">中文</option><option value="en">English</option></select><button type="button" className="sf-icon-button" title={t("刷新工程状态")} aria-label={t("刷新工程状态")} disabled={busy} onClick={refresh}>↻</button></div></header>
     {languageError && <p className="sf-inline-error" role="alert">{t('语言设置未能保存，请重试。')}</p>}
     <div className="sf-context">
-      <div className="sf-label-row"><label htmlFor={`${controlsId}-project`}>{t("工程")}</label><button type="button" disabled={disabled || hasDraft} onClick={() => setForm(form === 'project' ? undefined : 'project')}>{t("＋ 打开仓库")}</button></div>
-      <select id={`${controlsId}-project`} value={projectId} disabled={busy || hasDraft} onChange={event => { setProjectId(event.target.value); setItemId(''); setSnapshot(undefined); }}><option value="" disabled>{t("选择本地工程")}</option>{bootstrap?.projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select>
+      <div className="sf-label-row"><label htmlFor={`${controlsId}-project`}>{t("工程")}</label><button type="button" disabled={writesBlocked || hasDraft} onClick={() => setForm(form === 'project' ? undefined : 'project')}>{t("＋ 打开仓库")}</button></div>
+      <select id={`${controlsId}-project`} value={projectId} disabled={busy || hasDraft} onChange={event => chooseProject(event.target.value)}><option value="" disabled>{t("选择本地工程")}</option>{bootstrap?.projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select>
       {project && <code className="sf-path" title={project.rootPath}>{project.rootPath}</code>}
+      {cwd && <p className="sf-hint" title={cwd}>{contextPending && (hasDraft || form) ? t('当前对话目录已变化，保存或取消编辑后将自动关联。') : association.cwd === cwd && association.linked ? t('已关联当前对话工程') : association.cwd === cwd && association.failed ? t('无法自动关联当前对话目录，请手动选择工程或打开 Git 仓库。') : contextPending || busy && !association.linked ? t('正在关联当前对话工程…') : ''}</p>}
       <div className="sf-label-row"><label htmlFor={`${controlsId}-item`}>{t("工作项")}</label><button type="button" disabled={disabled || hasDraft || !project} onClick={() => setForm(form === 'item' ? undefined : 'item')}>{t("＋ 新需求")}</button></div>
-      <select id={`${controlsId}-item`} value={itemId} disabled={busy || hasDraft || !items.length} onChange={event => { setItemId(event.target.value); setSnapshot(undefined); }}><option value="" disabled>{items.length ? t("选择工作项") : t("此工程还没有需求")}</option>{items.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
-      {hasDraft && <p className="sf-hint">{t("有未保存的正文编辑。保存或取消编辑后，即可切换工程或工作项。")}</p>}
+      <select id={`${controlsId}-item`} value={itemId} disabled={busy || hasDraft || !items.length} onChange={event => select(projectId, event.target.value)}><option value="" disabled>{items.length ? t("选择工作项") : t("此工程还没有需求")}</option>{items.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
+      {hasDraft && <p className="sf-hint">{t("有未保存的编辑。保存或取消编辑后，即可切换工程或工作项。")}</p>}
     </div>
     <div className="sf-messages" aria-live="polite">
       {error && <div className="sf-alert" role="alert">{t(error)}<button type="button" disabled={busy} onClick={refresh}>{t("刷新核对")}</button></div>}
       {notice && !error && <p className="sf-notice" role="status">{t(notice)}</p>}
     </div>
-    {form && <CreateForm key={form} kind={form} disabled={disabled} projectId={projectId} command={command} onCancel={() => setForm(undefined)} onCreated={result => { setForm(undefined); if (form === 'project') { setProjectId(result.id); setItemId(''); } else setItemId(result.id); setSnapshot(undefined); }} />}
+    {form && <CreateForm key={form} kind={form} disabled={disabled} projectId={projectId} command={command} onCancel={() => setForm(undefined)} onCreated={result => { setForm(undefined); if (form === 'project') chooseProject(result.id); else select(projectId, result.id); }} />}
     <nav className="sf-tabs" aria-label={t("工程工作区")}>{([['flow', t("流程")], ['documents', t("文档")], ['code', t("代码")], ['runs', t("运行")]] as const).map(([key, label]) => <button type="button" key={key} aria-current={section === key ? 'page' : undefined} className={section === key ? 'sf-active' : ''} onClick={() => setSection(key)}>{label}{key === 'flow' && pending > 0 && <span className="sf-count">{pending}</span>}</button>)}</nav>
     <main className="sf-body">
       {loading && !current ? <p className="sf-loading" role="status">{t("正在读取本地工程…")}</p> : !project ? <Empty title={t("把需求变成可验证的工程")}>{t("打开一个本地 Git 仓库，从需求规格开始建立完整的开发记录。")}</Empty> : !current ? <Empty title={t("从一个新需求开始")}>{t('为 {0} 创建工作项。每个工作项会使用独立的分支与工作区。', { 0: project.name })}</Empty> : <>
         <div className="sf-item-heading"><h2>{current.item.name}</h2><Badge value={current.item.status} /><code title={current.item.branch}>{current.item.branch}</code></div>
-        {pendingInteractions.map(interaction => <InteractionCard key={interaction.id} id={interaction.id} request={interaction.request} command={command} disabled={disabled} />)}
-        <div hidden={section !== 'flow'}><Flow key={current.item.id} snapshot={current} bootstrap={bootstrap!} read={read} run={run} command={command} disabled={disabled} visible={tab.visible && section === 'flow'} onCode={() => setSection('code')} onRequirementsEditingChange={value => setEditing(current => ({ ...current, requirements: value }))} /></div>
-        <div hidden={section !== 'documents'}><Documents key={current.item.id} snapshot={current} read={read} run={run} command={command} disabled={disabled} visible={tab.visible && section === 'documents'} onEditingChange={value => setEditing(current => ({ ...current, artifact: value }))} /></div>
+        {pendingInteractions.map(interaction => <InteractionCard key={interaction.id} id={interaction.id} request={interaction.request} command={command} disabled={disabled} onEditingChange={value => reportDraft(`interaction:${interaction.id}`, value)} />)}
+        <div hidden={section !== 'flow'}><Flow key={current.item.id} snapshot={current} bootstrap={bootstrap!} read={read} run={run} command={command} disabled={disabled} visible={tab.visible && section === 'flow'} onCode={() => setSection('code')} onRequirementsEditingChange={value => reportDraft('requirements', value)} onDraftChange={reportDraft} /></div>
+        <div hidden={section !== 'documents'}><Documents key={current.item.id} snapshot={current} read={read} run={run} command={command} disabled={disabled} visible={tab.visible && section === 'documents'} onEditingChange={value => reportDraft('artifact', value)} /></div>
         <div hidden={section !== 'code'}><Code snapshot={current} read={read} run={run} disabled={disabled} visible={tab.visible && section === 'code'} /></div>
         <div hidden={section !== 'runs'}><Runs snapshot={current} bootstrap={bootstrap!} read={read} run={run} disabled={disabled} visible={tab.visible && section === 'runs'} /></div>
       </>}
@@ -227,7 +278,7 @@ function CreateForm({ kind, projectId, command, onCreated, onCancel, disabled }:
   </form>;
 }
 
-function Flow({ snapshot, bootstrap, read, run, command, disabled, visible, onCode, onRequirementsEditingChange }: { snapshot: SpecflowSnapshot; bootstrap: SpecflowBootstrap; read: Read; run(operation: CommandOperation, id?: string, input?: unknown): void; command: Command; disabled: boolean; visible: boolean; onCode(): void; onRequirementsEditingChange(value: boolean): void }) {
+function Flow({ snapshot, bootstrap, read, run, command, disabled, visible, onCode, onRequirementsEditingChange, onDraftChange }: { snapshot: SpecflowSnapshot; bootstrap: SpecflowBootstrap; read: Read; run(operation: CommandOperation, id?: string, input?: unknown): void; command: Command; disabled: boolean; visible: boolean; onCode(): void; onRequirementsEditingChange(value: boolean): void; onDraftChange(kind: string, value: boolean): void }) {
   const latest = snapshot.runs.at(-1);
   const nodes = snapshot.nodes.filter(node => node.workflowRunId === latest?.id);
   const [chosen, setChosen] = useState(''), [override, setOverride] = useState(''), [showStages, setShowStages] = useState(false);
@@ -268,8 +319,8 @@ function Flow({ snapshot, bootstrap, read, run, command, disabled, visible, onCo
     </section>}
     {node?.verificationUnconfirmed && <VerificationRecovery compact disabled={disabled} onConfirm={reason => run('confirmNodeVerificationStopped', node.id, { expectedRevision: node.revision, reason })} />}
     {latest && <AutomationControls compact workflowRun={latest} node={node} definition={definition} repairs={snapshot.repairCycles} automations={snapshot.automationRuns} disabled={disabled} startBlocked={editingRequirements} onCommand={run} />}
-    {clarification && <Clarification key={clarification.id} session={clarification} draft={snapshot.clarificationDrafts.find(draft => draft.sessionId === clarification.id)} command={command} disabled={disabled} />}
-    <ProjectSettings key={snapshot.project.id} project={snapshot.project} targets={targets} command={command} disabled={disabled} />
+    {clarification && <Clarification key={clarification.id} session={clarification} draft={snapshot.clarificationDrafts.find(draft => draft.sessionId === clarification.id)} command={command} disabled={disabled} onEditingChange={value => onDraftChange('clarification', value)} />}
+    <ProjectSettings key={snapshot.project.id} project={snapshot.project} targets={targets} command={command} disabled={disabled} onEditingChange={value => onDraftChange('settings', value)} />
     <Requirements snapshot={snapshot} command={command} disabled={disabled} onEditingChange={value => { setEditingRequirements(value); onRequirementsEditingChange(value); }} />
   </>;
 }
@@ -306,19 +357,43 @@ function Requirements({ snapshot, command, disabled, onEditingChange }: { snapsh
   </details>;
 }
 
-function Clarification({ session, draft, command, disabled }: { session: ClarificationSession; draft?: ClarificationDraft; command: Command; disabled: boolean }) {
+function Clarification({ session, draft, command, disabled, onEditingChange }: { session: ClarificationSession; draft?: ClarificationDraft; command: Command; disabled: boolean; onEditingChange?(value: boolean): void }) {
   const [answers, setAnswers] = useState<Record<string, string>>(() => ({ ...draft?.answers }));
+  const [savedAnswers, setSavedAnswers] = useState(answers);
+  const reportEditing = useRef(onEditingChange);
+  reportEditing.current = onEditingChange;
   const prefix = useId();
   const questions = session.questions.filter(question => !question.answer);
-  const submit = async (event: FormEvent) => { event.preventDefault(); try { await command('answerClarification', session.id, { expectedRevision: session.revision, answers: questions.map(question => ({ questionId: question.id, answer: answers[question.id]?.trim() })) }); } catch { /* Preserve answers on a failed write. */ } };
-  return <form className="sf-card sf-clarification" onSubmit={submit}><span className="sf-eyebrow">{t("需要你的决定")}</span><h3>{t("补全需求中的关键问题")}</h3><p className="sf-hint">{t("回答会写入当前规格，随后继续澄清。暂时离开前可以保存草稿。")}</p>{questions.map((question, index) => <div className="sf-question" key={question.id}><label htmlFor={`${prefix}-${index}`}><span>{String(index + 1).padStart(2, '0')}</span>{question.question}</label><p>{question.reason}</p><div className="sf-options">{question.options.map(option => <button type="button" key={option} aria-pressed={answers[question.id] === option} disabled={disabled} onClick={() => setAnswers(value => ({ ...value, [question.id]: option }))}>{option}</button>)}</div><textarea id={`${prefix}-${index}`} rows={3} required maxLength={4000} disabled={disabled} value={answers[question.id] ?? ''} onChange={event => setAnswers(value => ({ ...value, [question.id]: event.target.value }))} /></div>)}<div className="sf-actions"><button type="button" disabled={disabled} onClick={() => { void command('saveClarificationDraft', session.id, { expectedRevision: draft?.revision ?? 0, answers }).catch(() => {}); }}>{t("保存草稿")}</button><button className="sf-primary" disabled={disabled || questions.some(question => !answers[question.id]?.trim())}>{t("提交回答并继续")}</button></div></form>;
+  const dirty = questions.some(question => (answers[question.id] ?? '') !== (savedAnswers[question.id] ?? ''));
+  useEffect(() => { reportEditing.current?.(dirty); }, [dirty]);
+  useEffect(() => () => { reportEditing.current?.(false); }, []);
+  const submit = async (event: FormEvent) => { event.preventDefault(); try { await command('answerClarification', session.id, { expectedRevision: session.revision, answers: questions.map(question => ({ questionId: question.id, answer: answers[question.id]?.trim() })) }); setSavedAnswers({ ...answers }); } catch { /* Preserve answers on a failed write. */ } };
+  const saveDraft = async () => {
+    try { await command('saveClarificationDraft', session.id, { expectedRevision: draft?.revision ?? 0, answers }); setSavedAnswers({ ...answers }); }
+    catch { /* Failed writes leave the answers dirty and available for retry. */ }
+  };
+  return <form className="sf-card sf-clarification" onSubmit={submit}><span className="sf-eyebrow">{t("需要你的决定")}</span><h3>{t("补全需求中的关键问题")}</h3><p className="sf-hint">{t("回答会写入当前规格，随后继续澄清。暂时离开前可以保存草稿。")}</p>{questions.map((question, index) => <div className="sf-question" key={question.id}><label htmlFor={`${prefix}-${index}`}><span>{String(index + 1).padStart(2, '0')}</span>{question.question}</label><p>{question.reason}</p><div className="sf-options">{question.options.map(option => <button type="button" key={option} aria-pressed={answers[question.id] === option} disabled={disabled} onClick={() => setAnswers(value => ({ ...value, [question.id]: option }))}>{option}</button>)}</div><textarea id={`${prefix}-${index}`} rows={3} required maxLength={4000} disabled={disabled} value={answers[question.id] ?? ''} onChange={event => setAnswers(value => ({ ...value, [question.id]: event.target.value }))} /></div>)}<div className="sf-actions">{dirty && <button type="button" disabled={disabled} onClick={() => setAnswers({ ...savedAnswers })}>{t("恢复已保存回答")}</button>}<button type="button" disabled={disabled} onClick={() => { void saveDraft(); }}>{t("保存草稿")}</button><button className="sf-primary" disabled={disabled || questions.some(question => !answers[question.id]?.trim())}>{t("提交回答并继续")}</button></div></form>;
 }
 
-function ProjectSettings({ project, targets, command, disabled }: { project: Project; targets: ModelTarget[]; command: Command; disabled: boolean }) {
+function ProjectSettings({ project, targets, command, disabled, onEditingChange }: { project: Project; targets: ModelTarget[]; command: Command; disabled: boolean; onEditingChange?(value: boolean): void }) {
   const test = project.commands.find(command => command.id === 'test') ?? project.commands[0];
   const [rules, setRules] = useState(project.rules), [executable, setExecutable] = useState(test?.executable ?? 'node');
   const [args, setArgs] = useState(JSON.stringify(test?.args ?? ['--test'])), [revision, setRevision] = useState(project.revision), [error, setError] = useState('');
   const [defaults, setDefaults] = useState(project.defaults);
+  const fingerprint = (rules: string, executable: string, args: string, defaults: Project['defaults']) => JSON.stringify([rules, executable, args, ...(['analyst', 'architect', 'developer', 'reviewer'] as const).map(role => defaults[role] ? targetKey(defaults[role]!) : '')]);
+  const [baseline, setBaseline] = useState(() => fingerprint(project.rules, test?.executable ?? 'node', JSON.stringify(test?.args ?? ['--test']), project.defaults));
+  const dirty = fingerprint(rules, executable, args, defaults) !== baseline;
+  const reportEditing = useRef(onEditingChange);
+  reportEditing.current = onEditingChange;
+  useEffect(() => { reportEditing.current?.(dirty); }, [dirty]);
+  useEffect(() => () => { reportEditing.current?.(false); }, []);
+  const restore = (value: Project) => {
+    const test = value.commands.find(command => command.id === 'test') ?? value.commands[0];
+    const executable = test?.executable ?? 'node', args = JSON.stringify(test?.args ?? ['--test']);
+    setRules(value.rules); setExecutable(executable); setArgs(args); setDefaults(value.defaults); setRevision(value.revision); setError('');
+    setBaseline(fingerprint(value.rules, executable, args, value.defaults));
+  };
+  useEffect(() => { if (!dirty && project.revision !== revision) restore(project); }, [project.revision]);
   const prefix = useId();
   const submit = async (event: FormEvent) => {
     event.preventDefault(); setError('');
@@ -327,10 +402,10 @@ function ProjectSettings({ project, targets, command, disabled }: { project: Pro
     catch { setError("命令参数请填写 JSON 字符串数组，例如 [\"run\", \"test\"]。"); return; }
     try {
       const updated = await command('configureProject', project.id, { expectedRevision: revision, executionBackend: 'dsh', rules, defaults, commands: [{ id: 'test', executable: executable.trim(), args: parsed, timeoutMs: test?.timeoutMs ?? 120000 }, ...project.commands.filter(command => command.id !== 'test' && command.id !== test?.id)] }) as Project;
-      setRevision(updated.revision);
+      restore(updated);
     } catch { /* Keep the user's configuration draft on conflict. */ }
   };
-  return <details className="sf-details"><summary>{t("工程配置与验证命令")}</summary><form className="sf-settings-form" onSubmit={submit}>{([['analyst', t("分析")], ['architect', t("设计")], ['developer', t("开发")], ['reviewer', t("复核")]] as const).map(([role, label]) => <label className="sf-field" key={role} htmlFor={`${prefix}-${role}`}>{label} {t("默认模型")}<select id={`${prefix}-${role}`} value={defaults[role] ? targetKey(defaults[role]!) : ''} disabled={disabled} onChange={event => { const target = targets.find(target => targetKey(target) === event.target.value); setDefaults(value => { const next = { ...value }; if (target) next[role] = target; else delete next[role]; return next; }); }}><option value="">{t("每次启动时选择")}</option>{targets.map(target => <option key={targetKey(target)} value={targetKey(target)}>{target.connectionSlug} / {target.model}</option>)}</select></label>)}<label className="sf-field" htmlFor={`${prefix}-rules`}>{t("工程规则")}<textarea id={`${prefix}-rules`} rows={4} value={rules} onChange={event => setRules(event.target.value)} disabled={disabled} /></label><label className="sf-field" htmlFor={`${prefix}-executable`}>{t("验证命令")}<input id={`${prefix}-executable`} value={executable} onChange={event => setExecutable(event.target.value)} required disabled={disabled} placeholder="npm" /></label><label className="sf-field" htmlFor={`${prefix}-args`}>{t("命令参数（JSON 数组）")}<input id={`${prefix}-args`} value={args} onChange={event => setArgs(event.target.value)} disabled={disabled} placeholder={'["run", "test"]'} /></label><p className="sf-hint">{t("验证在工作项的独立工作区中执行。npm 项目可使用 npm 与 [\"run\", \"test\"]。")}</p>{error && <p className="sf-inline-error">{t(error)}</p>}<div className="sf-actions"><button type="submit" disabled={disabled || !executable.trim()}>{t("保存工程配置")}</button></div></form></details>;
+  return <details className="sf-details"><summary>{t("工程配置与验证命令")}</summary><form className="sf-settings-form" onSubmit={submit}>{([['analyst', t("分析")], ['architect', t("设计")], ['developer', t("开发")], ['reviewer', t("复核")]] as const).map(([role, label]) => <label className="sf-field" key={role} htmlFor={`${prefix}-${role}`}>{label} {t("默认模型")}<select id={`${prefix}-${role}`} value={defaults[role] ? targetKey(defaults[role]!) : ''} disabled={disabled} onChange={event => { const target = targets.find(target => targetKey(target) === event.target.value); setDefaults(value => { const next = { ...value }; if (target) next[role] = target; else delete next[role]; return next; }); }}><option value="">{t("每次启动时选择")}</option>{targets.map(target => <option key={targetKey(target)} value={targetKey(target)}>{target.connectionSlug} / {target.model}</option>)}</select></label>)}<label className="sf-field" htmlFor={`${prefix}-rules`}>{t("工程规则")}<textarea id={`${prefix}-rules`} rows={4} value={rules} onChange={event => setRules(event.target.value)} disabled={disabled} /></label><label className="sf-field" htmlFor={`${prefix}-executable`}>{t("验证命令")}<input id={`${prefix}-executable`} value={executable} onChange={event => setExecutable(event.target.value)} required disabled={disabled} placeholder="npm" /></label><label className="sf-field" htmlFor={`${prefix}-args`}>{t("命令参数（JSON 数组）")}<input id={`${prefix}-args`} value={args} onChange={event => setArgs(event.target.value)} disabled={disabled} placeholder={'["run", "test"]'} /></label><p className="sf-hint">{t("验证在工作项的独立工作区中执行。npm 项目可使用 npm 与 [\"run\", \"test\"]。")}</p>{error && <p className="sf-inline-error">{t(error)}</p>}<div className="sf-actions">{dirty && <button type="button" disabled={disabled} onClick={() => restore(project)}>{t("取消配置修改")}</button>}<button type="submit" disabled={disabled || !executable.trim()}>{t("保存工程配置")}</button></div></form></details>;
 }
 
 function Documents({ snapshot, read, run, command, disabled, visible, onEditingChange }: { snapshot: SpecflowSnapshot; read: Read; run(operation: CommandOperation, id?: string, input?: unknown): void; command: Command; disabled: boolean; visible: boolean; onEditingChange(value: boolean): void }) {
@@ -411,7 +486,19 @@ function Runs({ snapshot, bootstrap, read, run, disabled, visible }: { snapshot:
   return <><label className="sf-field">{t("执行尝试")}<select value={attempt.id} onChange={event => setChosen(event.target.value)}>{[...snapshot.attempts].reverse().map(attempt => <option key={attempt.id} value={attempt.id}>{workflowText(snapshot.nodes.find(node => node.id === attempt.nodeRunId)?.name || '')} · #{attempt.number} · {labels[attempt.execution]}</option>)}</select></label><section className="sf-card"><div className="sf-section-heading"><h3>{t("尝试 #")}{attempt.number}</h3><Badge value={attempt.execution} /></div><dl className="sf-run-facts"><div><dt>{t("执行底座")}</dt><dd>{attempt.target.backend}</dd></div><div><dt>{t("连接 / 模型")}</dt><dd>{attempt.target.connectionSlug} / {attempt.target.model}</dd></div><div><dt>{t("启动时间")}</dt><dd>{time(attempt.startedAt)}</dd></div><div><dt>{t("结束时间")}</dt><dd>{time(attempt.finishedAt)}</dd></div><div><dt>{t("执行会话")}</dt><dd><code>{binding?.ref.sessionId ?? t("尚未绑定")}</code></dd></div></dl><ExecutionFacts attempt={detail || attempt} compact />{detail?.id === attempt.id && detail.verificationPending && detail.verificationLive === false && <VerificationRecovery compact disabled={disabled} onConfirm={reason => run('confirmVerificationStopped', attempt.id, { expectedRevision: (detail || attempt).revision, reason })} />}{(detail?.error || detail?.controlError || attempt.error || attempt.controlError || error) && <p className="sf-inline-error">{t(detail?.error || detail?.controlError || attempt.error || attempt.controlError || error)}</p>}<div className="sf-actions">{activeStates.includes(attempt.execution) && <button type="button" className="sf-stop" disabled={disabled} onClick={() => run('stopAttempt', attempt.id)}>{t("停止")}</button>}{attempt.execution === 'reconciling' && <button type="button" disabled={disabled} onClick={() => run('reconcileAttempt', attempt.id)}>{t("核对执行结果")}</button>}{canResume && ['failed', 'cancelled'].includes(attempt.execution) && <button type="button" disabled={disabled} onClick={() => run('resumeAttempt', attempt.id)}>{t("尝试恢复原执行")}</button>}</div>{!canResume && ['failed', 'cancelled'].includes(attempt.execution) && <p className="sf-hint">{t("原执行不支持恢复。核对结果后，可在流程中重新执行此步骤。")}</p>}</section><details className="sf-details" open><summary>{t("运行输出")}</summary><pre>{detail?.output ?? t("当前没有已持久化的输出。")}</pre></details><details className="sf-details"><summary>{t("原始执行提示")}</summary><pre>{detail?.prompt ?? t("正在读取…")}</pre></details></>;
 }
 
-function InteractionCard({ id, request, command, disabled }: { id: string; request: unknown; command: Command; disabled: boolean }) {
+function InteractionCard({ id, request, command, disabled, onEditingChange }: { id: string; request: unknown; command: Command; disabled: boolean; onEditingChange?(value: boolean): void }) {
   const prefix = useId(), [answer, setAnswer] = useState('');
-  return <form className="sf-card sf-clarification" onSubmit={event => { event.preventDefault(); let value: unknown = answer; try { value = JSON.parse(answer); } catch { /* Text is also a valid interaction answer. */ } void command('answerInteraction', id, { answer: value }).catch(() => {}); }}><h3>{t("运行正在等待你的回答")}</h3><pre>{typeof request === 'string' ? request : JSON.stringify(request, null, 2)}</pre><label htmlFor={prefix}>{t("回答（文本或 JSON）")}</label><textarea id={prefix} rows={3} value={answer} onChange={event => setAnswer(event.target.value)} required disabled={disabled} /><div className="sf-actions"><button className="sf-primary" disabled={disabled || !answer.trim()}>{t("提交给当前运行")}</button></div></form>;
+  const [savedAnswer, setSavedAnswer] = useState('');
+  const dirty = answer !== savedAnswer;
+  const reportEditing = useRef(onEditingChange);
+  reportEditing.current = onEditingChange;
+  useEffect(() => { reportEditing.current?.(dirty); }, [dirty]);
+  useEffect(() => () => { reportEditing.current?.(false); }, []);
+  const submit = async (event: FormEvent) => {
+    event.preventDefault(); let value: unknown = answer;
+    try { value = JSON.parse(answer); } catch { /* Text is also a valid interaction answer. */ }
+    try { await command('answerInteraction', id, { answer: value }); setSavedAnswer(answer); }
+    catch { /* Preserve the answer and its guard until an acknowledged write or reset. */ }
+  };
+  return <form className="sf-card sf-clarification" onSubmit={submit}><h3>{t("运行正在等待你的回答")}</h3><pre>{typeof request === 'string' ? request : JSON.stringify(request, null, 2)}</pre><label htmlFor={prefix}>{t("回答（文本或 JSON）")}</label><textarea id={prefix} rows={3} value={answer} onChange={event => setAnswer(event.target.value)} required disabled={disabled} /><div className="sf-actions">{dirty && <button type="button" disabled={disabled} onClick={() => setAnswer(savedAnswer)}>{t("取消回答修改")}</button>}<button className="sf-primary" disabled={disabled || !answer.trim()}>{t("提交给当前运行")}</button></div></form>;
 }

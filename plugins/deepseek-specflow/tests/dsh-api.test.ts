@@ -1,12 +1,90 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, realpath, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { SpecflowApi, createSpecflowFetchRoute } from '../src/api.ts';
 import { acceptedDocuments, clarifySpec, fixture, runNode } from '../../../tests/helpers.ts';
 import type { ArtifactRevision, RequirementDocument, RequirementRevision, WorkItem } from '../../../packages/domain/index.ts';
-import type { SpecflowBootstrap, SpecflowSnapshot } from '../src/protocol.ts';
+import type { SpecflowBootstrap, SpecflowProjectAssociation, SpecflowSnapshot } from '../src/protocol.ts';
 import manifest from '../package.json' with { type: 'json' };
+
+test('DSH directory association reuses canonical projects without changing configuration or creating work', async () => {
+  const f = await fixture(), api = new SpecflowApi(f.service);
+  try {
+    const project = f.store.get('projects', f.item.projectId);
+    const nested = join(project.rootPath, 'src', 'nested');
+    await mkdir(nested, { recursive: true });
+    const alias = join(f.root, 'repository-alias');
+    await symlink(project.rootPath, alias, process.platform === 'win32' ? 'junction' : 'dir');
+    const counts = { projects: f.store.list('projects').length, items: f.store.list('workItems').length, runs: f.store.list('runs').length };
+    for (const [index, rootPath] of [project.rootPath, nested, alias].entries()) {
+      const result = await api.command({ operation: 'associateProject', input: { rootPath }, idempotencyKey: `existing-project-${index}` }) as SpecflowProjectAssociation;
+      assert.deepEqual(result.project, project);
+      assert.equal(result.workItemId, undefined);
+    }
+    assert.deepEqual(f.store.get('projects', project.id), project);
+    assert.deepEqual({ projects: f.store.list('projects').length, items: f.store.list('workItems').length, runs: f.store.list('runs').length }, counts);
+  } finally { await api.close(); await f.cleanup(); }
+});
+
+test('DSH directory association follows owned item and candidate worktrees to the original project', async () => {
+  const f = await fixture(), api = new SpecflowApi(f.service);
+  try {
+    const project = f.store.get('projects', f.item.projectId);
+    const space = await f.service.workspaces.create(project.rootPath, project.baseCommit, 'candidate');
+    f.store.create('candidates', { workItemId: f.item.id, ...space, baseCommit: project.baseCommit, checkpointCommit: project.baseCommit, attemptId: 'association-fixture', status: 'working' });
+    const count = f.store.list('projects').length;
+    for (const [index, workspace] of [f.item.workspace, space.workspace].entries()) {
+      const rootPath = join(workspace, 'nested');
+      await mkdir(rootPath);
+      const result = await api.command({ operation: 'associateProject', input: { rootPath }, idempotencyKey: `owned-worktree-${index}` }) as SpecflowProjectAssociation;
+      assert.equal(result.project.id, project.id);
+      assert.equal(result.workItemId, f.item.id);
+    }
+    assert.equal(f.store.list('projects').length, count);
+  } finally { await api.close(); await f.cleanup(); }
+});
+
+test('DSH directory association registers new repositories once and keeps external worktrees separate', async () => {
+  const f = await fixture(), api = new SpecflowApi(f.service);
+  try {
+    const rootPath = join(f.root, 'new-repository');
+    await mkdir(rootPath);
+    await f.service.workspaces.git(rootPath, ['init']);
+    await writeFile(join(rootPath, 'README.md'), '# Current conversation repository\n');
+    await f.service.workspaces.git(rootPath, ['add', '.']);
+    await f.service.workspaces.git(rootPath, ['-c', 'user.name=Specflow Test', '-c', 'user.email=test@localhost', 'commit', '-m', 'Initial repository']);
+    const request = { operation: 'associateProject', input: { rootPath }, idempotencyKey: 'register-current-project' };
+    const count = f.store.list('projects').length, itemCount = f.store.list('workItems').length;
+    const first = await api.command(request) as SpecflowProjectAssociation;
+    assert.equal(first.project.rootPath, await realpath(rootPath));
+    assert.notEqual(first.project.id, f.item.projectId);
+    assert.equal(first.project.demo, false);
+    assert.deepEqual(await api.command(request), first);
+    assert.deepEqual(await api.command({ ...request, idempotencyKey: 'associate-again' }), first);
+    assert.equal(f.store.list('projects').length, count + 1);
+    assert.equal(f.store.list('workItems').length, itemCount);
+
+    const external = join(f.root, 'external-worktree');
+    await f.service.workspaces.git(rootPath, ['worktree', 'add', '-b', 'external-conversation', external, 'HEAD']);
+    const other = await api.command({ operation: 'associateProject', input: { rootPath: external }, idempotencyKey: 'external-project' }) as SpecflowProjectAssociation;
+    assert.notEqual(other.project.id, first.project.id);
+    assert.equal(other.project.rootPath, await realpath(external));
+    assert.equal(other.workItemId, undefined);
+    assert.equal(f.store.list('projects').length, count + 2);
+  } finally { await api.close(); await f.cleanup(); }
+});
+
+test('DSH directory association rejects unavailable, non-Git and malformed directories without records', async () => {
+  const f = await fixture(), api = new SpecflowApi(f.service);
+  try {
+    const count = f.store.list('projects').length;
+    await assert.rejects(api.command({ operation: 'associateProject', input: { rootPath: join(f.root, 'missing') }, idempotencyKey: 'missing-directory' }), { code: 'PROJECT_DIRECTORY_UNAVAILABLE', status: 400 });
+    await assert.rejects(api.command({ operation: 'associateProject', input: { rootPath: f.root }, idempotencyKey: 'non-git-directory' }), { code: 'GIT_FAILED' });
+    await assert.rejects(api.command({ operation: 'associateProject', input: { rootPath: '', name: 'unexpected' }, idempotencyKey: 'malformed-directory' }));
+    assert.equal(f.store.list('projects').length, count);
+  } finally { await api.close(); await f.cleanup(); }
+});
 
 test('DSH API reads the shared core and retries commands without creating duplicate runs', async () => {
   const f = await fixture(), api = new SpecflowApi(f.service);

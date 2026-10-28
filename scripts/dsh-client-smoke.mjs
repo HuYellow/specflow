@@ -40,8 +40,14 @@ const clarification=entity('clarify-1',{workItemId:item.id,nodeRunId:nodes[1].id
 const candidate=entity('candidate-1',{workItemId:item.id,workspace:item.workspace,branch:item.branch,baseCommit:'abc12345',checkpointCommit:'def45678',attemptId:attempt.id,status:'ready'});
 const requirementDocuments=[{id:'upload-1',name:'验收附件.md',content:'上传附件：错误必须报告行号。',source:'upload'},{id:'pasted-1',name:'用户补充说明.txt',content:'粘贴资料：支持 UTF-8。',source:'pasted'},{id:'repository-1',name:'existing-spec.md',content:'仓库资料：兼容现有导入调用。',source:'repository',repositoryPath:'docs/existing-spec.md'}];
 const snapshot={item,project,requirements:{current:entity('requirements-1',{workItemId:item.id,number:1,request:item.request,documents:requirementDocuments,contentHash:'abc'}),history:[]},clarifications:[clarification],clarificationDrafts:[],workflows:[flow],runs:[workflowRun],nodes,attempts:[attempt],bindings:[],artifacts:[artifact],revisions:[revision],candidates:[candidate],evidence:[],findings:[],tasks:[],comments:[],decisions:[],interactions:[]};
-window.fixture={visible:true,failRead:false,commandMode:'normal',rejectOn:'',commands:[],reads:0,types:[],seats:[],snapshot,target,disposers:[]};
+window.fixture={visible:true,failRead:false,commandMode:'normal',rejectOn:'',commands:[],reads:0,types:[],seats:[],snapshot,target,disposers:[],sessionId:'qa-session',projects:[project],workItems:[item],nonGitDirectories:[],delayAssociationPath:undefined};
 const copy=value=>JSON.parse(JSON.stringify(value));
+let hostState={byId:{'qa-session':{id:'qa-session',cwd:undefined}},projections:{},sessions:{'qa-session':{openState:'open'}}};
+const hostListeners=new Set();
+const subscribeHost=listener=>{hostListeners.add(listener);return()=>hostListeners.delete(listener)};
+const publishHost=()=>{for(const listener of hostListeners)listener()};
+let releaseAssociation;
+window.releaseAssociation=()=>{releaseAssociation?.();releaseAssociation=undefined};
 window.changeRequirements=(request)=>{
   const previous=snapshot.requirements.current;
   const next=entity('requirements-'+(previous.number+1),{workItemId:item.id,number:previous.number+1,request,documents:copy(previous.documents),contentHash:'requirements-hash-'+(previous.number+1)});
@@ -57,7 +63,7 @@ const connection={rpc:{call:async(channel,endpoint,payload,signal)=>{
     fixture.reads++;
     if(fixture.failRead)return {ok:false,error:{code:'gateway/internal',message:'模拟：本地服务暂时不可用',details:{}}};
     let value;
-    if(payload.resource==='bootstrap')value={version:'0.1.0',canWrite:true,projects:[project],workItems:[item],catalog:{backends:[{id:'dsh',name:'DeepSeek Harness',capabilities:{available:true,canResume:false,canInteract:false,readOnlyReview:true}}],targets:[target]}};
+    if(payload.resource==='bootstrap')value={version:'0.1.0',canWrite:true,projects:fixture.projects,workItems:fixture.workItems,catalog:{backends:[{id:'dsh',name:'DeepSeek Harness',capabilities:{available:true,canResume:false,canInteract:false,readOnlyReview:true}}],targets:[target]}};
     if(payload.resource==='snapshot')value=snapshot;
     if(payload.resource==='readiness')value={ready:true,reasons:[]};
     if(payload.resource==='artifact'){const source=snapshot.revisions.find(revision=>revision.id===payload.id);value={schemaVersion:1,sourceRevisionId:source.id,sourceContentHash:source.contentHash,mode:source.id===revision.id?'authored':'extractive',brief:{title:source.id===revision.id?'CSV 导入的行为边界':'修订后的 CSV 导入规格',summary:'让正常数据成功导入，并为异常数据提供可定位的错误。',sections:[{title:'验收标准',items:['支持带引号与转义的字段。','遇到无效数据报告具体行号。']}]}};}
@@ -67,6 +73,7 @@ const connection={rpc:{call:async(channel,endpoint,payload,signal)=>{
     return {ok:true,value:copy(value)};
   }
   fixture.commands.push(copy(payload));
+  if(payload.operation==='associateProject' && payload.input.rootPath===fixture.delayAssociationPath)await new Promise(resolve=>{releaseAssociation=resolve});
   await new Promise(resolve=>setTimeout(resolve,100));
   if(fixture.commandMode==='uncertain')return {ok:false,error:{code:'SPECFLOW_FAILURE',message:'模拟：响应丢失',details:{}}};
   if(fixture.rejectOn===payload.operation){fixture.rejectOn='';if(payload.operation==='saveRequirements')window.changeRequirements('服务端并发保存的新需求');if(payload.operation==='editArtifact')window.changeArtifact('# 服务端并发保存的新文档');return {ok:false,error:{code:'REVISION_CONFLICT',message:'内容已有新修订，请比较最新内容',details:{status:409}}};}
@@ -81,9 +88,18 @@ const connection={rpc:{call:async(channel,endpoint,payload,signal)=>{
   if(payload.operation==='acceptArtifact')artifact.acceptedRevisionId=revision.id;
   if(payload.operation==='acceptCode')candidate.status='accepted';
   if(payload.operation==='saveClarificationDraft')snapshot.clarificationDrafts=[entity('draft-1',{sessionId:clarification.id,answers:payload.input.answers})];
+  if(payload.operation==='answerInteraction')snapshot.interactions=snapshot.interactions.filter(interaction=>interaction.id!==payload.id);
   if(payload.operation==='configureProject')Object.assign(project,payload.input,{revision:project.revision+1});
   if(payload.operation==='createWorkItem')return {ok:true,value:item};
   if(payload.operation==='registerProject')return {ok:true,value:project};
+  if(payload.operation==='associateProject'){
+    const path=payload.input.rootPath;
+    if(fixture.nonGitDirectories.includes(path))return {ok:false,error:{code:'GIT_FAILED',message:'模拟：当前目录不是 Git 仓库',details:{status:400}}};
+    const workItem=fixture.workItems.find(value=>value.workspace===path);
+    let associated=fixture.projects.find(value=>value.rootPath===path || value.id===workItem?.projectId);
+    if(!associated){associated=entity('project-'+(fixture.projects.length+1),{...copy(project),id:'project-'+(fixture.projects.length+1),name:path.split(/[\\/]/).filter(Boolean).at(-1),rootPath:path});fixture.projects.push(associated)}
+    return {ok:true,value:copy({project:associated,workItemId:workItem?.id})};
+  }
   return {ok:true,value:copy(project)};
 }}};
 const lifetime=new AbortController();
@@ -92,7 +108,26 @@ const ctx={connection,effect:callback=>{const dispose=callback();fixture.dispose
 window.plugin.apply(ctx);
 const mount=document.getElementById('mount');
 let reactRoot=window.__sfCreateRoot(mount);
-const render=()=>reactRoot.render(window.__sfModules.react.createElement(Body,{connection,sessionId:'qa-session',useTabInfo:()=>({tab:{id:'qa-tab',visible:fixture.visible,signal:lifetime.signal,actions:{bindCommands:()=>()=>{}}}})}));
+const useSessions=selector=>selector(window.__sfModules.react.useSyncExternalStore(subscribeHost,()=>hostState));
+const render=()=>{
+  const sessionId=fixture.sessionId;
+  const useProjection=key=>window.__sfModules.react.useSyncExternalStore(subscribeHost,()=>hostState.projections[sessionId]?.[key]);
+  const useSession=selector=>selector(window.__sfModules.react.useSyncExternalStore(subscribeHost,()=>hostState).sessions[sessionId]);
+  reactRoot.render(window.__sfModules.react.createElement(Body,{connection,sessionId,useSessions,useSession,useProjection,useTabInfo:()=>({tab:{id:'qa-tab',visible:fixture.visible,signal:lifetime.signal,actions:{bindCommands:()=>()=>{}}}})}));
+};
+window.setSessionContext=({sessionId=fixture.sessionId,cwd,workingDirectory,openState='open'})=>{
+  fixture.sessionId=sessionId;
+  hostState={byId:{...hostState.byId,[sessionId]:{id:sessionId,cwd}},projections:{...hostState.projections,[sessionId]:{workingDirectory}},sessions:{...hostState.sessions,[sessionId]:{openState}}};
+  publishHost();render();
+};
+window.setWorkingDirectory=workingDirectory=>{
+  hostState={...hostState,projections:{...hostState.projections,[fixture.sessionId]:{workingDirectory}}};
+  publishHost();
+};
+window.setSessionOpenState=openState=>{
+  hostState={...hostState,sessions:{...hostState.sessions,[fixture.sessionId]:{openState}}};
+  publishHost();
+};
 window.setVisible=value=>{fixture.visible=value;render()};
 window.remountPanel=()=>{reactRoot.unmount();reactRoot=window.__sfCreateRoot(mount);render()};
 window.disablePlugin=()=>{reactRoot.unmount();lifetime.abort();for(const dispose of fixture.disposers.reverse())if(typeof dispose==='function')dispose();};
@@ -312,6 +347,191 @@ try {
   await page.screenshot({ path: join(output, 'english-document-draft.png') });
   await page.getByRole('button', { name: /^Cancel document editing$/i }).click();
   checks.push('English/Chinese switching preserves unsaved document text, persists the selection, leaves the host document unchanged, and fits a 420px panel.');
+
+  await page.getByRole('combobox', { name: 'Interface language', exact: true }).selectOption('zh-CN');
+  const projectSelect = page.getByLabel('工程', { exact: true });
+  const originalRoot = await page.evaluate(() => fixture.projects[0].rootPath);
+  const chatRoot = String.raw`C:\projects\current-chat`;
+  await page.evaluate(cwd => { window.setSessionContext({ sessionId: 'associated-chat', cwd }); }, originalRoot);
+  await page.getByText('已关联当前对话工程', { exact: true }).waitFor();
+  assert.equal(await projectSelect.inputValue(), 'project-1');
+  assert.equal(await page.getByLabel('工作项', { exact: true }).inputValue(), 'item-1');
+  await page.evaluate(cwd => window.setSessionContext({ sessionId: 'new-chat', cwd }), chatRoot);
+  await page.waitForFunction(rootPath => document.querySelector('.sf-context > .sf-path')?.textContent === rootPath, chatRoot);
+  await page.getByText('已关联当前对话工程', { exact: true }).waitFor();
+  await page.getByRole('heading', { name: '从一个新需求开始', exact: true }).waitFor();
+  const chatProjectId = await projectSelect.inputValue();
+  assert.notEqual(chatProjectId, 'project-1');
+  assert.equal(await page.evaluate(rootPath => fixture.projects.filter(project => project.rootPath === rootPath).length, chatRoot), 1);
+  checks.push('A newly opened chat selects its own repository and automatically registers an unseen repository, replacing the previous chat selection.');
+
+  const coldOriginalRoot = String.raw`C:\projects\cold-original`;
+  const coldCurrentRoot = String.raw`C:\projects\cold-current`;
+  await page.evaluate(cwd => window.setSessionContext({ sessionId: 'cold-opening-chat', cwd, openState: 'loading' }), coldOriginalRoot);
+  await page.waitForTimeout(300);
+  await page.evaluate(cwd => window.setWorkingDirectory(cwd), coldCurrentRoot);
+  await page.waitForTimeout(300);
+  assert.equal(await page.evaluate(roots => fixture.commands.some(command => command.operation === 'associateProject' && roots.includes(command.input.rootPath)), [coldOriginalRoot, coldCurrentRoot]), false);
+  await page.evaluate(() => window.setSessionOpenState('open'));
+  await page.waitForFunction(rootPath => document.querySelector('.sf-context > .sf-path')?.textContent === rootPath, coldCurrentRoot);
+  assert.equal(await page.evaluate(rootPath => fixture.commands.some(command => command.operation === 'associateProject' && command.input.rootPath === rootPath), coldOriginalRoot), false);
+  checks.push('A cold chat waits for its opening baseline and associates the current working-directory projection without registering its stale original directory.');
+
+  await page.evaluate(cwd => window.setSessionContext({ sessionId: 'new-chat', cwd }), chatRoot);
+  await page.waitForFunction(rootPath => document.querySelector('.sf-context > .sf-path')?.textContent === rootPath, chatRoot);
+  await page.evaluate(cwd => window.setWorkingDirectory(cwd), originalRoot);
+  await page.waitForFunction(() => document.querySelector('.sf-context > .sf-path')?.textContent === fixture.projects[0].rootPath);
+  await page.getByRole('heading', { name: itemName() }).waitFor();
+  await projectSelect.selectOption(chatProjectId);
+  await page.waitForTimeout(2800);
+  assert.equal(await projectSelect.inputValue(), chatProjectId);
+  await page.evaluate(cwd => window.setSessionContext({ sessionId: 'another-chat', cwd }), originalRoot);
+  await page.getByRole('heading', { name: itemName() }).waitFor();
+  assert.equal(await projectSelect.inputValue(), 'project-1');
+  checks.push('Live working-directory projections update the project; a manual selection survives polling and does not leak into another chat.');
+
+  await page.evaluate(() => window.setVisible(false));
+  const hiddenAssociations = await page.evaluate(() => fixture.commands.filter(command => command.operation === 'associateProject').length);
+  const hiddenRoot = String.raw`C:\projects\hidden-chat`;
+  await page.evaluate(cwd => window.setWorkingDirectory(cwd), hiddenRoot);
+  await page.waitForTimeout(2800);
+  assert.equal(await page.evaluate(() => fixture.commands.filter(command => command.operation === 'associateProject').length), hiddenAssociations);
+  await page.evaluate(() => window.setVisible(true));
+  await page.waitForFunction(rootPath => document.querySelector('.sf-context > .sf-path')?.textContent === rootPath, hiddenRoot);
+  checks.push('Hidden tabs do not associate changed directories; showing the tab associates the latest directory.');
+
+  const nonGitRoot = String.raw`C:\notes\non-git`;
+  await page.evaluate(cwd => { fixture.nonGitDirectories.push(cwd); window.setSessionContext({ sessionId: 'notes-chat', cwd }); }, nonGitRoot);
+  await page.getByText('无法自动关联当前对话目录，请手动选择工程或打开 Git 仓库。', { exact: true }).waitFor();
+  assert.equal(await page.getByRole('button', { name: '＋ 打开仓库', exact: true }).isEnabled(), true);
+  assert.equal(await projectSelect.isEnabled(), true);
+  const rejectedAssociations = await page.evaluate(rootPath => fixture.commands.filter(command => command.operation === 'associateProject' && command.input.rootPath === rootPath).length, nonGitRoot);
+  await page.waitForTimeout(2800);
+  assert.equal(await page.evaluate(rootPath => fixture.commands.filter(command => command.operation === 'associateProject' && command.input.rootPath === rootPath).length, nonGitRoot), rejectedAssociations);
+  await projectSelect.selectOption(chatProjectId);
+  assert.equal(await projectSelect.inputValue(), chatProjectId);
+  checks.push('A non-Git chat directory shows a helpful association hint, remains usable for manual selection and does not retry on every poll.');
+
+  const delayedRoot = String.raw`C:\projects\slow-chat`;
+  const newerRoot = String.raw`C:\projects\latest-chat`;
+  await page.evaluate(cwd => { fixture.delayAssociationPath = cwd; window.setSessionContext({ sessionId: 'racing-chat', cwd }); }, delayedRoot);
+  await page.waitForFunction(rootPath => fixture.commands.some(command => command.operation === 'associateProject' && command.input.rootPath === rootPath), delayedRoot);
+  await page.evaluate(cwd => window.setWorkingDirectory(cwd), newerRoot);
+  await page.evaluate(() => {
+    fixture.visibleAssociationPaths = [];
+    fixture.associationObserver = new MutationObserver(() => { const path = document.querySelector('.sf-context > .sf-path')?.textContent; if (path) fixture.visibleAssociationPaths.push(path); });
+    fixture.associationObserver.observe(document.getElementById('mount'), { subtree: true, childList: true, characterData: true });
+    window.releaseAssociation();
+  });
+  await page.waitForFunction(rootPath => document.querySelector('.sf-context > .sf-path')?.textContent === rootPath, newerRoot);
+  assert.equal(await page.locator('.sf-context > .sf-path').textContent(), newerRoot);
+  assert.equal(await page.evaluate(rootPath => { fixture.associationObserver.disconnect(); return fixture.visibleAssociationPaths.includes(rootPath); }, delayedRoot), false);
+  checks.push('A delayed response for an older directory is never selected after the chat has moved to a newer directory.');
+
+  await page.evaluate(cwd => window.setSessionContext({ sessionId: 'editing-chat', cwd }), originalRoot);
+  await page.getByRole('heading', { name: itemName() }).waitFor();
+  await page.locator('.sf-requirements > summary').click();
+  await page.getByRole('button', { name: '编辑需求', exact: true }).click();
+  const preservedContextDraft = '当前对话目录改变后仍须保留这份未保存的需求正文。';
+  await page.getByLabel('需求正文', { exact: true }).fill(preservedContextDraft);
+  const deferredRoot = String.raw`C:\projects\after-editing`;
+  await page.evaluate(cwd => window.setWorkingDirectory(cwd), deferredRoot);
+  await page.getByText('当前对话目录已变化，保存或取消编辑后将自动关联。', { exact: true }).waitFor();
+  await page.waitForTimeout(2800);
+  assert.equal(await page.getByLabel('需求正文', { exact: true }).inputValue(), preservedContextDraft);
+  assert.equal(await projectSelect.inputValue(), 'project-1');
+  assert.equal(await page.evaluate(rootPath => fixture.commands.some(command => command.operation === 'associateProject' && command.input.rootPath === rootPath), deferredRoot), false);
+  await page.getByRole('button', { name: '取消编辑需求', exact: true }).click();
+  await page.waitForFunction(rootPath => document.querySelector('.sf-context > .sf-path')?.textContent === rootPath, deferredRoot);
+  await page.screenshot({ path: join(output, 'chat-project-association.png') });
+  checks.push('Unsaved requirement text defers automatic association without losing the draft; cancelling editing applies the pending chat directory.');
+
+  await page.evaluate(cwd => window.setSessionContext({ sessionId: 'clarification-editing-chat', cwd }), originalRoot);
+  await page.getByRole('heading', { name: itemName() }).waitFor();
+  await page.getByRole('button', { name: '切换步骤' }).click();
+  await page.getByRole('button', { name: /需求澄清/ }).click();
+  const clarificationEditor = page.locator('.sf-question textarea');
+  const clarificationAnswer = '先收集所有错误行，再显示行号供用户核对。';
+  await clarificationEditor.fill(clarificationAnswer);
+  const clarificationRoot = String.raw`C:\projects\after-clarification`;
+  await page.evaluate(cwd => window.setWorkingDirectory(cwd), clarificationRoot);
+  await page.getByText('当前对话目录已变化，保存或取消编辑后将自动关联。', { exact: true }).waitFor();
+  await page.waitForTimeout(2800);
+  assert.equal(await clarificationEditor.inputValue(), clarificationAnswer);
+  assert.equal(await projectSelect.inputValue(), 'project-1');
+  assert.equal(await page.evaluate(rootPath => fixture.commands.some(command => command.operation === 'associateProject' && command.input.rootPath === rootPath), clarificationRoot), false);
+  await page.getByRole('button', { name: '保存草稿', exact: true }).click();
+  await page.waitForFunction(rootPath => document.querySelector('.sf-context > .sf-path')?.textContent === rootPath, clarificationRoot);
+  assert.equal(await page.evaluate(() => fixture.commands.filter(command => command.operation === 'saveClarificationDraft').at(-1).input.answers.q1), clarificationAnswer);
+  checks.push('Unsaved clarification answers survive a directory change and polling; saving the answer draft releases the deferred association.');
+
+  await page.evaluate(cwd => window.setSessionContext({ sessionId: 'settings-editing-chat', cwd }), originalRoot);
+  await page.getByRole('heading', { name: itemName() }).waitFor();
+  await page.getByText('工程配置与验证命令', { exact: true }).click();
+  const projectRules = page.locator('.sf-settings-form textarea');
+  const configurationDraft = '保留尚未保存的工程规则，并核对新的验证命令。';
+  await projectRules.fill(configurationDraft);
+  await page.getByLabel('验证命令', { exact: true }).fill('node');
+  const settingsRoot = String.raw`C:\projects\after-settings`;
+  await page.evaluate(cwd => window.setWorkingDirectory(cwd), settingsRoot);
+  await page.getByText('当前对话目录已变化，保存或取消编辑后将自动关联。', { exact: true }).waitFor();
+  await page.waitForTimeout(2800);
+  assert.equal(await projectRules.inputValue(), configurationDraft);
+  assert.equal(await page.getByLabel('验证命令', { exact: true }).inputValue(), 'node');
+  assert.equal(await projectSelect.inputValue(), 'project-1');
+  assert.equal(await page.evaluate(rootPath => fixture.commands.some(command => command.operation === 'associateProject' && command.input.rootPath === rootPath), settingsRoot), false);
+  await page.getByRole('button', { name: '取消配置修改', exact: true }).click();
+  await page.waitForFunction(rootPath => document.querySelector('.sf-context > .sf-path')?.textContent === rootPath, settingsRoot);
+  checks.push('Unsaved project rules and verification commands survive a directory change; cancelling configuration editing applies the deferred association.');
+
+  await page.evaluate(cwd => window.setSessionContext({ sessionId: 'settings-saving-chat', cwd }), originalRoot);
+  await page.getByRole('heading', { name: itemName() }).waitFor();
+  await page.getByText('工程配置与验证命令', { exact: true }).click();
+  const savedRules = '保存工程规则后再关联当前对话目录。';
+  await projectRules.fill(savedRules);
+  const savedSettingsRoot = String.raw`C:\projects\after-settings-save`;
+  await page.evaluate(cwd => window.setWorkingDirectory(cwd), savedSettingsRoot);
+  await page.getByText('当前对话目录已变化，保存或取消编辑后将自动关联。', { exact: true }).waitFor();
+  await page.getByRole('button', { name: '保存工程配置', exact: true }).click();
+  await page.waitForFunction(rootPath => document.querySelector('.sf-context > .sf-path')?.textContent === rootPath, savedSettingsRoot);
+  assert.equal(await page.evaluate(() => fixture.projects[0].rules), savedRules);
+  checks.push('Saving edited project configuration preserves the submitted rules and releases the deferred directory association.');
+
+  await page.evaluate(cwd => { fixture.snapshot.interactions.push({ id: 'interaction-draft', state: 'pending', request: '请选择遇到无效数据时的处理方式。' }); window.setSessionContext({ sessionId: 'interaction-editing-chat', cwd }); }, originalRoot);
+  await page.getByRole('heading', { name: '运行正在等待你的回答', exact: true }).waitFor();
+  const interactionAnswer = '保留当前数据并报告错误行。';
+  await page.getByLabel('回答（文本或 JSON）', { exact: true }).fill(interactionAnswer);
+  const interactionRoot = String.raw`C:\projects\after-interaction`;
+  await page.evaluate(cwd => window.setWorkingDirectory(cwd), interactionRoot);
+  await page.getByText('当前对话目录已变化，保存或取消编辑后将自动关联。', { exact: true }).waitFor();
+  await page.waitForTimeout(2800);
+  assert.equal(await page.getByLabel('回答（文本或 JSON）', { exact: true }).inputValue(), interactionAnswer);
+  assert.equal(await projectSelect.inputValue(), 'project-1');
+  assert.equal(await page.evaluate(rootPath => fixture.commands.some(command => command.operation === 'associateProject' && command.input.rootPath === rootPath), interactionRoot), false);
+  await page.getByRole('button', { name: '提交给当前运行', exact: true }).click();
+  await page.waitForFunction(rootPath => document.querySelector('.sf-context > .sf-path')?.textContent === rootPath, interactionRoot);
+  assert.equal(await page.evaluate(() => fixture.commands.filter(command => command.operation === 'answerInteraction').at(-1).input.answer), interactionAnswer);
+  checks.push('An unsent run-interaction answer survives a directory change and polling; submitting it preserves the answer and applies the deferred association.');
+
+  const oldPendingRoot = String.raw`C:\projects\old-pending-chat`;
+  const newPendingRoot = String.raw`C:\projects\new-pending-chat`;
+  await page.evaluate(cwd => { fixture.delayAssociationPath = cwd; window.setSessionContext({ sessionId: 'pending-write-chat', cwd }); }, oldPendingRoot);
+  await page.waitForFunction(rootPath => fixture.commands.some(command => command.operation === 'associateProject' && command.input.rootPath === rootPath), oldPendingRoot);
+  await page.evaluate(() => window.setSessionContext({ sessionId: 'temporary-other-chat' }));
+  await page.getByRole('heading', { name: itemName() }).waitFor();
+  await page.evaluate(cwd => window.setSessionContext({ sessionId: 'pending-write-chat', cwd }), newPendingRoot);
+  await page.getByRole('alert').filter({ hasText: '上次写入的结果尚未确认' }).waitFor();
+  await page.evaluate(() => { fixture.commandMode = 'uncertain'; });
+  await page.getByRole('button', { name: '刷新核对', exact: true }).click();
+  await page.waitForFunction(rootPath => fixture.commands.some(command => command.operation === 'associateProject' && command.input.rootPath === rootPath), newPendingRoot);
+  await page.getByRole('alert').filter({ hasText: '写入结果尚未确认' }).waitFor();
+  await page.evaluate(() => { fixture.commandMode = 'normal'; window.releaseAssociation(); });
+  await page.waitForTimeout(300);
+  await page.evaluate(() => window.remountPanel());
+  await page.getByRole('alert').filter({ hasText: '上次写入的结果尚未确认' }).waitFor();
+  assert.equal(await page.getByRole('button', { name: '＋ 打开仓库', exact: true }).isDisabled(), true);
+  checks.push('An old request completing after the same chat is remounted cannot clear a newer uncertain-write guard; the guard survives another remount.');
+
   await page.evaluate(() => window.disablePlugin());
   assert.deepEqual(await page.evaluate(() => ({ types: fixture.types.length, seats: fixture.seats.length, styles: document.querySelectorAll('style[data-plugin="dsh-plugin-specflow"]').length })), { types: 0, seats: 0, styles: 0 });
   const unloadedReads = await page.evaluate(() => fixture.reads);
@@ -319,7 +539,7 @@ try {
   assert.equal(await page.evaluate(() => fixture.reads), unloadedReads);
   checks.push('Hidden sessions stop polling; plugin unload removes tab, slot, stylesheet and all timers.');
   assert.deepEqual(errors, []);
-  const report = { passed: true, checks, pageErrors: errors, screenshots: ['flow.png', 'documents.png', 'documents-dark.png', 'document-edit-conflict.png', 'document-edited-candidate.png'] };
+  const report = { passed: true, checks, pageErrors: errors, screenshots: ['flow.png', 'documents.png', 'documents-dark.png', 'document-edit-conflict.png', 'document-edited-candidate.png', 'chat-project-association.png'] };
   await writeFile(join(output, 'report.json'), `${JSON.stringify(report, null, 2)}\n`);
   console.log(JSON.stringify(report, null, 2));
 } catch (error) {

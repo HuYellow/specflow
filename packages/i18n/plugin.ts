@@ -1,5 +1,14 @@
 /** Official DSH plugin UI and app-owned host diagnostics. */
 export const messages: Record<string, string> = {
+  '已关联当前对话工程': 'Linked to the current chat project',
+  '恢复已保存回答': 'Restore saved answers',
+  '取消配置修改': 'Discard configuration changes',
+  '取消回答修改': 'Discard answer changes',
+  '有未保存的编辑。保存或取消编辑后，即可切换工程或工作项。': 'You have unsaved edits. Save or cancel them before switching projects or work items.',
+  '正在关联当前对话工程…': 'Linking the current chat project…',
+  '当前对话目录已变化，保存或取消编辑后将自动关联。': 'The chat directory changed. Save or cancel your edits to link its project.',
+  '无法自动关联当前对话目录，请手动选择工程或打开 Git 仓库。': 'Could not link the chat directory. Select a project or open a Git repository.',
+  '当前会话的工程目录不可用，请打开其他本地 Git 仓库。': 'The current chat project directory is unavailable. Open another local Git repository.',
   '语言设置未能保存，请重试。': 'Could not save the language setting. Try again.',
   '为 {0} 创建工作项。每个工作项会使用独立的分支与工作区。': 'Create a work item for {0}. Each work item uses a separate branch and workspace.',
   '接纳以完整执行文档为准；本简报与修订 {0} 对应。': 'Acceptance uses the complete execution document. This brief corresponds to revision {0}.',

@@ -137,7 +137,8 @@ async function runPhase(phase, root) {
       await git(repository, ['init']);
       await git(repository, ['add', '.']);
       await git(repository, ['-c', 'user.name=Specflow Smoke', '-c', 'user.email=smoke@localhost', 'commit', '-m', 'fixture']);
-      const project = await command('registerProject', { rootPath: repository, name: 'Native DSH smoke' });
+      const associated = await command('associateProject', { rootPath: repository });
+      const project = associated.project;
       assert.equal(project.executionBackend, 'dsh');
       const input = { projectId: project.id, name: 'Requirement isolation', request: 'FR01: Keep a durable requirement in an isolated workspace.', kind: 'feature', documents: [] };
       const first = await command('createWorkItem', input, undefined, 'smoke-create-item');
@@ -148,6 +149,10 @@ async function runPhase(phase, root) {
     assert.equal(bootstrap.projects.length, 1);
     assert.equal(bootstrap.workItems.length, 1);
     const project = bootstrap.projects[0], item = bootstrap.workItems[0];
+    const associated = await command('associateProject', { rootPath: item.workspace });
+    assert.equal(associated.project.id, project.id, 'The chat worktree must retain its original project');
+    assert.equal(associated.workItemId, item.id, 'The chat worktree must select its original work item');
+    assert.equal((await read({ resource: 'bootstrap' })).projects.length, 1, 'Association must not duplicate registered projects');
     const snapshot = await read({ resource: 'snapshot', id: item.id });
     assert.equal(snapshot.item.id, item.id);
     assert.ok(snapshot.nodes.length > 0);
