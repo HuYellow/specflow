@@ -454,6 +454,7 @@ try {
   const clarificationEditor = page.locator('.sf-question textarea');
   const clarificationAnswer = '先收集所有错误行，再显示行号供用户核对。';
   await clarificationEditor.fill(clarificationAnswer);
+  await page.waitForFunction(() => document.querySelector('.sf-context > select')?.disabled === true);
   const clarificationRoot = String.raw`C:\projects\after-clarification`;
   await page.evaluate(cwd => window.setWorkingDirectory(cwd), clarificationRoot);
   await page.getByText('当前对话目录已变化，保存或取消编辑后将自动关联。', { exact: true }).waitFor();
@@ -473,6 +474,7 @@ try {
   const configurationDraft = '保留尚未保存的工程规则，并核对新的验证命令。';
   await projectRules.fill(configurationDraft);
   await page.getByLabel('验证命令', { exact: true }).fill('node');
+  await page.waitForFunction(() => document.querySelector('.sf-context > select')?.disabled === true);
   const settingsRoot = String.raw`C:\projects\after-settings`;
   await page.evaluate(cwd => window.setWorkingDirectory(cwd), settingsRoot);
   await page.getByText('当前对话目录已变化，保存或取消编辑后将自动关联。', { exact: true }).waitFor();
@@ -490,6 +492,7 @@ try {
   await page.getByText('工程配置与验证命令', { exact: true }).click();
   const savedRules = '保存工程规则后再关联当前对话目录。';
   await projectRules.fill(savedRules);
+  await page.waitForFunction(() => document.querySelector('.sf-context > select')?.disabled === true);
   const savedSettingsRoot = String.raw`C:\projects\after-settings-save`;
   await page.evaluate(cwd => window.setWorkingDirectory(cwd), savedSettingsRoot);
   await page.getByText('当前对话目录已变化，保存或取消编辑后将自动关联。', { exact: true }).waitFor();
@@ -502,6 +505,7 @@ try {
   await page.getByRole('heading', { name: '运行正在等待你的回答', exact: true }).waitFor();
   const interactionAnswer = '保留当前数据并报告错误行。';
   await page.getByLabel('回答（文本或 JSON）', { exact: true }).fill(interactionAnswer);
+  await page.waitForFunction(() => document.querySelector('.sf-context > select')?.disabled === true);
   const interactionRoot = String.raw`C:\projects\after-interaction`;
   await page.evaluate(cwd => window.setWorkingDirectory(cwd), interactionRoot);
   await page.getByText('当前对话目录已变化，保存或取消编辑后将自动关联。', { exact: true }).waitFor();
