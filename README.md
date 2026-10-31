@@ -76,6 +76,8 @@ New work items use the selected language for their default workflow, generated d
 
 The app includes Electron, Node.js 24, npm, and the Maka Runtime Host. Install **Git** separately, along with the tools your project's tests and build commands require.
 
+**macOS validation · 2026-10-31:** A local Apple Silicon build passed native checks on macOS 27.2: 290 passing tests (one Windows-only check skipped), the official Maka Host, DMG/ZIP packaging, and the packaged CSV engineering workflow. The [validation record](docs/implementation/macos-validation.md) identifies the tested revision, additional desktop checks, and limits; this run covers ARM64.
+
 <details>
 <summary>Installer checksums, signing, and updates</summary>
 

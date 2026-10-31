@@ -129,11 +129,12 @@ try {
     await page.getByRole('tab', { name: '开发流程', exact: true }).click();
     const primaryAction = page.locator('.flow-task-bar .primary-button');
     await expect(primaryAction).toBeVisible();
-    await page.evaluate(() => {
+    const directoryOffset = await page.evaluate(() => {
       const directory = document.querySelector('.flow-directory-heading');
       if (!directory) throw new Error('Flow directory missing during zoom validation');
-      window.scrollTo(0, directory.getBoundingClientRect().top + window.scrollY);
+      return directory.getBoundingClientRect().top;
     });
+    await page.mouse.wheel(0, directoryOffset);
     await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
     await expect(primaryAction).toBeInViewport({ ratio: 1 });
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'Horizontal overflow at real Electron 200% zoom');

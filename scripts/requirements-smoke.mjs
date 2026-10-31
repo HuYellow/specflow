@@ -1,9 +1,9 @@
 import { _electron as electron, expect } from '@playwright/test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
-import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, realpath, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join, resolve, sep } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
 const root = resolve(import.meta.dirname, '..'), require = createRequire(import.meta.url);
@@ -39,7 +39,7 @@ try {
   const itemId = boot.workItems[0].id;
   const sourceContent = '# CSV 产品需求\nFR-CSV-101：引号内的逗号必须保留，支持 CRLF。\n';
   const repository = boot.projects[0].rootPath;
-  assert.ok(resolve(repository).startsWith(resolve(userData)), 'Repository fixture must belong to the isolated desktop profile');
+  assert.ok((await realpath(repository)).startsWith(`${await realpath(userData)}${sep}`), 'Repository fixture must belong to the isolated desktop profile');
   await writeFile(join(repository, 'README.md'), '# CSV 需求背景\n需求文档用于验证仓库导入功能。\n');
   for (const args of [['add', '--', 'README.md'], ['-c', 'user.name=SpecFlow', '-c', 'user.email=specflow@localhost', 'commit', '-m', 'Add repository requirements fixture']]) {
     const result = spawnSync('git', args, { cwd: repository, encoding: 'utf8', windowsHide: true });

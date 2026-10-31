@@ -1,8 +1,8 @@
 # SpecFlow 桌面安装、更新与发布
 
-更新日期：2026-10-20。目标平台为 Windows x64、macOS Apple Silicon 和 macOS Intel。桌面版使用独立 Electron 窗口，自动管理本地工程服务与 Maka Runtime Host。
+更新日期：2026-10-31。目标平台为 Windows x64、macOS Apple Silicon 和 macOS Intel。桌面版使用独立 Electron 窗口，自动管理本地工程服务与 Maka Runtime Host。
 
-当前内置 Maka 0.2.0 从 Apache 签名正式源码发行版构建，仅包含 Runtime Host 及生产依赖。源码、编译器、测试、CLI/Eval 和构建缓存不进入桌面包；禁止使用 dev、nightly、snapshot、RC、占位包或其他开发构建替代正式版本。当前继续使用 Maka，独立底座选择、切换和新增适配器暂缓。详见 [运行时管理](maka-runtime-management.md)。
+当前内置 Maka 0.2.0 从 Apache 签名正式源码发行版构建，仅包含 Runtime Host 及生产依赖。源码、编译器、测试、CLI/Eval 和构建缓存不进入桌面包；禁止使用 dev、nightly、snapshot、RC、占位包或其他开发构建替代正式版本。Maka 为默认内置底座，也可选择已注册的 OpenCode 适配器连接本机单独安装的服务；切换只影响新尝试，历史执行身份保留。详见 [运行时管理](maka-runtime-management.md) 和 [底座接入与切换](execution-backends.md)。
 
 ## 获取安装包
 
@@ -20,7 +20,7 @@ Windows 选择磁盘根目录时，安装器会立即在目录输入框显示完
 
 安装包包含 Electron、固定版 Node.js 24.19.0、npm、Maka 0.2.0 Runtime Host、工作区扩展和前后端资源。用户无需安装 Node.js、GPG 或执行 npm。应用依赖本机 Git：Windows 安装 Git for Windows；macOS 安装 Xcode Command Line Tools 或 Git。运行项目验证命令还需要项目自身的编译器、包管理器等工具。
 
-Windows 已有打包程序本机验收记录。macOS 需要原生构建与运行验收。当前尚未配置 Windows Authenticode 签名、macOS Developer ID 签名及 Apple 公证，尚无对应通过记录；操作系统可能对未签名应用显示安全提示。
+Windows 已有打包程序本机验收记录。2026-10-31 已完成 macOS 27.2 Apple Silicon 的本机原生构建与打包运行验收，详见 [macOS 验收记录](macos-validation.md)；本轮未执行 Intel 本机验收。当前尚未配置 Windows Authenticode 签名、macOS Developer ID 签名及 Apple 公证，尚无对应通过记录；操作系统可能对未签名应用显示安全提示。
 
 2026-10-20 已正式发布 [SpecFlow 0.1.3](https://github.com/HuYellow/specflow/releases/tag/desktop-v0.1.3)，并设为 Latest。[原生 CI](https://github.com/HuYellow/specflow/actions/runs/39369191126) 的 Windows x64、macOS arm64、macOS x64 及发布任务全部通过：各平台 151 项测试、原生安装包构建、源码目录外启动及完整打包验收成功；Windows 另通过 17 个安装目录路径案例和 5 次静默目录检查。三个目标来自标签提交 `9d1d2195cf7212092d3abe0afdf5e25ad457a39c`。首次发布修复了 macOS 源码真实路径比较、空证书链接、随包 npm 链接，以及 901–1119px 紧凑桌面导航入口。
 
