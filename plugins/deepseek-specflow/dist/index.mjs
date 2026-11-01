@@ -40617,7 +40617,7 @@ import { clientRequestSchema } from "@deepseek-ai/dsh-client-connection";
 // plugins/deepseek-specflow/package.json
 var package_default = {
   name: "dsh-plugin-specflow",
-  version: "0.1.1",
+  version: "0.1.2",
   description: "Specflow \u5DE5\u7A0B\u6D41\u7A0B\u5DE5\u4F5C\u53F0\uFF1A\u9700\u6C42\u3001\u89C4\u683C\u3001\u4EFB\u52A1\u3001\u72EC\u7ACB\u590D\u6838\u4E0E\u4EBA\u5DE5\u9A8C\u6536",
   type: "module",
   main: "./dist/index.mjs",
@@ -40651,7 +40651,7 @@ var package_default = {
   ],
   engines: {
     node: ">=24",
-    dsh: "0.2.1-rc.2"
+    dsh: ">=0.2.1-rc.2"
   },
   publishConfig: {
     access: "public",
@@ -40678,12 +40678,12 @@ var package_default = {
   },
   peerDependencies: {
     "@deepseek-ai/cordis": "~4.0.5",
-    "@deepseek-ai/dsh-agent": "0.2.1-rc.2",
-    "@deepseek-ai/dsh-client-connection": "0.2.1-rc.2",
-    "@deepseek-ai/dsh-client-ui-session": "0.2.1-rc.2",
-    "@deepseek-ai/dsh-client-ui-sidebar-right": "0.2.1-rc.2",
-    "@deepseek-ai/dsh-home-paths": "0.2.1-rc.2",
-    "@deepseek-ai/dsh-tools": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-agent": ">=0.2.1-rc.2",
+    "@deepseek-ai/dsh-client-connection": ">=0.2.1-rc.2",
+    "@deepseek-ai/dsh-client-ui-session": ">=0.2.1-rc.2",
+    "@deepseek-ai/dsh-client-ui-sidebar-right": ">=0.2.1-rc.2",
+    "@deepseek-ai/dsh-home-paths": ">=0.2.1-rc.2",
+    "@deepseek-ai/dsh-tools": ">=0.2.1-rc.2",
     "@deepseek-ai/schemastery": "~3.18.5",
     react: "^18.3.1"
   },

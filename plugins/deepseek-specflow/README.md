@@ -6,7 +6,10 @@ DeepSeek Harness。安装后，在一个已打开的会话右侧添加 **Specflo
 
 ## 兼容版本
 
-- DeepSeek Harness **0.2.1-rc.2**。插件声明精确的 `engines.dsh`，其他版本需要重新验证。
+- DeepSeek Harness **`0.2.1-rc.2` 及以上**。插件声明向上兼容的 `engines.dsh` 范围
+  （`>=0.2.1-rc.2`），已在 `0.2.1-rc.4` 通过安装、宿主激活与执行验收。DSH 的升级保持
+  插件所用 API 向下兼容，因此插件不随每个 DSH 版本重新发布；低于 `0.2.1-rc.2` 的宿主
+  仍会跳过该插件。
 - 宿主进程 **Node.js 24+**，以及本机 Git。桌面版使用 Electron 内嵌的 Node，
   全局 `node --version` 不能证明桌面宿主兼容。
 - 这是独立的 DSH 插件；安装包包含共享工程核心和插件界面，执行阶段使用 Harness
@@ -14,26 +17,29 @@ DeepSeek Harness。安装后，在一个已打开的会话右侧添加 **Specflo
 
 ## 安装
 
-公开版本见 [Specflow DSH 插件 0.1.1](https://github.com/HuYellow/specflow/releases/tag/dsh-plugin-specflow%400.1.1)。
-下载 [预构建安装包](https://github.com/HuYellow/specflow/releases/download/dsh-plugin-specflow%400.1.1/dsh-plugin-specflow-0.1.1.tgz)
-和同一 Release 的 `SHA256SUMS.txt`。在 DSH 的插件页选择安装第三方插件，输入发布包的
-HTTPS 地址或下载后的绝对路径。审核安装来源后启用插件。
+当前公开版本为 [dsh-plugin-specflow@0.1.1](https://www.npmjs.com/package/dsh-plugin-specflow)。
+在 DSH 的插件页选择 **安装第三方插件**，输入 `dsh-plugin-specflow@0.1.1`，
+审核安装来源后启用插件。录入平台若接受公共 npm 包详情页 URL，可使用上述 npm 链接。
 桌面版请使用自身的插件管理入口，以便安装到桌面版管理的 profile。
 
 CLI/Web 用户也可以安装到 Web profile：
 
 ```sh
-dsh plugin --profile web add https://github.com/HuYellow/specflow/releases/download/dsh-plugin-specflow%400.1.1/dsh-plugin-specflow-0.1.1.tgz
+dsh plugin --profile web add dsh-plugin-specflow@0.1.1
 dsh web
 ```
 
-当前公开来源为 GitHub 预构建包和固定提交的 Git 分发，尚未发布到 npm。
+也可从 [GitHub Release](https://github.com/HuYellow/specflow/releases/tag/dsh-plugin-specflow%400.1.1)
+下载 [预构建安装包](https://github.com/HuYellow/specflow/releases/download/dsh-plugin-specflow%400.1.1/dsh-plugin-specflow-0.1.1.tgz)
+及同一 Release 的 `SHA256SUMS.txt`，在安装入口输入安装包 HTTPS 地址或下载后的绝对路径。
+npm 包、GitHub 安装包与固定提交的 Git 分发均可使用；自定义市场索引仍固定到 Git 分发提交。
 
 ### 更新已安装的插件
 
 DSH 的第三方插件通过卸载后重新安装更新。先保存编辑并停止正在运行的 Specflow 操作，
-在同一 profile 的 **插件 → 已安装** 中卸载旧插件，再通过 **安装第三方插件** 安装新版
-预构建包，启用后重启 DSH。也可从已刷新索引的“发现”页选择新版安装。
+在同一 profile 的 **插件 → 已安装** 中卸载旧插件，再通过 **安装第三方插件** 输入新版
+包名及版本（当前为 `dsh-plugin-specflow@0.1.1`），安装启用后重启 DSH。
+也可安装 GitHub 预构建包，或从已刷新索引的“发现”页选择新版安装。
 工程数据库、执行日志和隔离工作区会保留；若配置过自定义 `dataDir`，重装后继续使用原值。
 
 `0.1.1` 会自动关联当前对话的 Git 工程，并跟随对话目录变化。已有工程和 Specflow 工作区
@@ -118,7 +124,7 @@ npm run dsh:test
 npm run dsh:pack
 ```
 
-产物为 `release/dsh/dsh-plugin-specflow-0.1.1.tgz` 和 `SHA256SUMS.txt`。
+产物为 `release/dsh/dsh-plugin-specflow-0.1.2.tgz` 和 `SHA256SUMS.txt`。
 包内容采用白名单检查，仅包含预构建 Host、浏览器工厂、配置层、说明和许可证。
 源代码、测试、缓存、Electron、Maka、OpenCode 和其他本机数据不会进入包。
 浏览器使用 DSH 共享的 React，未打入第二份 React。
@@ -137,7 +143,7 @@ npm run dsh:pack
 ```powershell
 New-Item -ItemType Directory -Force .tools/dsh-validation
 Push-Location .tools/dsh-validation
-npm install --ignore-scripts --no-audit --no-fund --registry https://registry.npmjs.org @deepseek-ai/dsh@0.2.1-rc.2
+npm install --ignore-scripts --no-audit --no-fund --registry https://registry.npmjs.org @deepseek-ai/dsh@0.2.1-rc.4
 Pop-Location
 npm run dsh:smoke
 ```
@@ -154,8 +160,10 @@ npm run dsh:smoke
 `npm run dsh:distribution` 准备仅含运行文件的 Git 分发树；`npm run dsh:market -- generate`
 生成官方格式的固定提交索引。完整发布步骤见仓库中的 `docs/implementation/dsh-publication.md`。
 
-`npm` 是另一种可选分发方式。配置发布账号后，可在本目录运行
-`npm publish --access public`；发布前应完成相同验证，并更新索引的安装来源。
+npm 已公开发布 `0.1.1`。后续版本完成相同验证后，使用具有发布权限的 npm 账号，
+将已验收的同一 `.tgz` 发布到 `https://registry.npmjs.org/`，保留预构建内容。
+发布账号需要完成 npm 要求的双重验证；发布返回成功后，等待新版本可通过 `npm view` 查询。
+同一包名和版本不能重复发布。npm 分发与固定提交的 Git 市场来源可以同时保留。
 
 ## 许可证
 
