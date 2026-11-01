@@ -8,8 +8,8 @@ Specflow 的插件独立于桌面安装包公开分发。当前 npm 版本为 `d
 ## 用户安装入口
 
 - [npm 包主页](https://www.npmjs.com/package/dsh-plugin-specflow)
-- [插件 Release](https://github.com/HuYellow/specflow/releases/tag/dsh-plugin-specflow%400.1.1)
-- [预构建安装包](https://github.com/HuYellow/specflow/releases/download/dsh-plugin-specflow%400.1.1/dsh-plugin-specflow-0.1.1.tgz)
+- [插件 Release](https://github.com/HuYellow/specflow/releases/tag/dsh-plugin-specflow%400.1.2)
+- [预构建安装包](https://github.com/HuYellow/specflow/releases/download/dsh-plugin-specflow%400.1.2/dsh-plugin-specflow-0.1.2.tgz)
 - [DSH 市场索引](https://raw.githubusercontent.com/HuYellow/specflow/main/market/dsh/index.json)
 
 在 DSH 插件页启用实验性的自定义插件市场，在“发现”中添加上述索引 URL。
@@ -126,9 +126,9 @@ SHA-256 为 `f5b07d89f798675c72f892a4b1efe4c98a2a732f34b967ba7adafb9ad7c49409`�
 （模型派发、工具作用域、JSONL 终止与冷核对）和宿主验收（原生安装、认证 RPC、
 客户端图、重启、锁清理）。本机无 Playwright Chromium，浏览器检查未在本轮执行。
 
-待办：用具有发布权限的 npm 账号发布同一 `.tgz`（需完成双重验证），并在该标签上创建
-GitHub Release 上传 `.tgz` 与 `SHA256SUMS.txt`。两项完成后再把两个 README 的
-“当前版本”改到 `0.1.2`。
+GitHub Release 已发布在该标签上，附件为上述 `.tgz` 与 `SHA256SUMS.txt`，不设为仓库
+Latest；公网下载的字节数与 SHA-256 已复核一致。待办：用具有发布权限的 npm 账号发布
+同一 `.tgz`（需完成双重验证）；完成后把两个 README 的“当前版本”改到 `0.1.2`。
 
 CI 的验收运行时仍固定为声明下限 `0.2.1-rc.2`（本机验收使用 `0.2.1-rc.4`）。
 升级该行需要具备 `workflow` 权限的 GitHub 凭据：缺少该权限的 OAuth App 令牌会被
