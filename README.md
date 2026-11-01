@@ -102,7 +102,7 @@ Run the same engineering core in a **Specflow** tab beside your DSH conversation
 
 **[npm · dsh-plugin-specflow 0.1.1](https://www.npmjs.com/package/dsh-plugin-specflow)** · [GitHub release](https://github.com/HuYellow/specflow/releases/tag/dsh-plugin-specflow%400.1.1) · [Plugin guide](plugins/deepseek-specflow/README.md)
 
-Requires **DSH `0.2.1-rc.2`**, **host Node.js 24+**, and **local Git**. The desktop app, Maka, and OpenCode are not required. Other DSH versions need separate validation.
+Requires **DSH `0.2.1-rc.2` or newer**, **host Node.js 24+**, and **local Git**. From `0.1.2` the plugin declares the open range `engines.dsh: ">=0.2.1-rc.2"` and is verified on `0.2.1-rc.4`: DSH keeps the plugin APIs backward compatible, so newer hosts load the same build, while older ones are still skipped. The desktop app, Maka, and OpenCode are not required.
 
 In DSH, open **Plugins → Install Third-Party Plugin** and enter `dsh-plugin-specflow@0.1.1`. Enable it and open the Specflow workbench in the right sidebar. The panel links the current conversation's repository automatically; you can also select a repository manually. Assign role models and verification commands, then create a work item.
 

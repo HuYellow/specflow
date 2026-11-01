@@ -7,10 +7,10 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { createMarketIndex, loadMarketValidator, marketIndexUrl, validateMarketIndex, verifyDistributionSource, verifyRemoteMarketIndex } from './dsh-market.mjs';
+import { createMarketIndex, dshEngineRange, loadMarketValidator, marketIndexUrl, validateMarketIndex, verifyDistributionSource, verifyRemoteMarketIndex } from './dsh-market.mjs';
 
 const manifest = JSON.parse(await readFile(resolve('plugins/deepseek-specflow/package.json'), 'utf8'));
-const validator = await loadMarketValidator();
+const validator = await loadMarketValidator(process.env.SPECFLOW_DSH_VALIDATION_DIR);
 const commit = '1234567890abcdef1234567890abcdef12345678';
 const publishedAt = '2026-10-21T12:00:00+08:00';
 
@@ -21,11 +21,21 @@ test('official DSH reader accepts the bilingual index and derives the exact Git 
   assert.equal(result.plugin.title.en, 'Specflow');
   assert.equal(result.plugin.title.zh, 'Specflow 工程流程工作台');
   assert.equal(result.version.publishTimestamp, Date.parse(publishedAt) / 1000);
-  assert.equal(result.version.engines.dsh, '0.2.1-rc.2');
+  assert.equal(result.version.engines.dsh, dshEngineRange);
+  assert.equal(result.version.engines.dsh, manifest.engines.dsh);
   assert.equal(result.install.spec, `git+https://github.com/HuYellow/specflow.git#${commit}&path:/plugins/deepseek-specflow`);
   const root = validateMarketIndex(createMarketIndex({ manifest, commit, publishedAt }), manifest, validator);
   assert.equal(root.install.spec, `git+https://github.com/HuYellow/specflow.git#${commit}`);
   assert.equal(validator.parseMarketIndex(value, marketIndexUrl).plugins[0].repository.directory, 'plugins/deepseek-specflow');
+});
+
+test('an index that has not published the working version yet stays valid, and the newest entry drives installation', () => {
+  const released = structuredClone(createMarketIndex({ manifest, commit, publishedAt, path: 'plugins/deepseek-specflow' }));
+  released.plugins[0].versions[0].version = '0.1.1';
+  const result = validateMarketIndex(released, manifest, validator);
+  assert.equal(result.current, undefined, 'An unreleased working version must not be required in the index');
+  assert.equal(result.version.version, '0.1.1');
+  assert.equal(result.install.spec, `git+https://github.com/HuYellow/specflow.git#${commit}&path:/plugins/deepseek-specflow`);
 });
 
 test('generation requires an explicit SHA and zoned publication time, and validation rejects incompatible identity', () => {
@@ -37,8 +47,8 @@ test('generation requires an explicit SHA and zoned publication time, and valida
   }
   assert.throws(() => createMarketIndex({ manifest, commit, publishedAt, path: '../plugin' }), /relative POSIX/);
   const wrongVersion = structuredClone(createMarketIndex({ manifest, commit, publishedAt }));
-  wrongVersion.plugins[0].versions[0].engines.dsh = '>=0.2.1-rc.2';
-  assert.throws(() => validateMarketIndex(wrongVersion, manifest, validator), /exact DSH compatibility/);
+  wrongVersion.plugins[0].versions[0].engines.dsh = '0.2.1-rc.4';
+  assert.throws(() => validateMarketIndex(wrongVersion, manifest, validator), /different DSH compatibility/);
   const invalid = structuredClone(wrongVersion);
   invalid.plugins[0].versions[0].source.commit = 'main';
   assert.throws(() => validator.parseMarketIndex(invalid, marketIndexUrl), /40-hex-digit/);

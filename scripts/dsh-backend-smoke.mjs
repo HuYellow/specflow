@@ -19,7 +19,10 @@ const sdkRoot = resolve(runtimeDir || process.env.SPECFLOW_DSH_SDK_ROOT || join(
 const sdkRequire = createRequire(join(sdkRoot, 'package.json'));
 const fromSdk = name => import(pathToFileURL(sdkRequire.resolve(name)).href);
 const sdkVersion = JSON.parse(await readFile(sdkRequire.resolve('@deepseek-ai/dsh/package.json'), 'utf8')).version;
-assert.equal(sdkVersion, '0.2.1-rc.2', 'The release smoke must run against the pinned DSH SDK');
+const pluginManifest = JSON.parse(await readFile(join(root, 'plugins', 'deepseek-specflow', 'package.json'), 'utf8'));
+const { evaluatePluginCompatibility } = await fromSdk('@deepseek-ai/dsh-app-boot');
+const sdkIncompatibility = evaluatePluginCompatibility(pluginManifest, {}, sdkVersion);
+assert.equal(sdkIncompatibility, undefined, `The release smoke must run a DSH SDK the plugin declares: ${JSON.stringify(sdkIncompatibility?.requirements)}`);
 const [cordis, llm, session, projections, systemPrompt, tools, agents, loop, persistence] = await Promise.all([
   '@deepseek-ai/cordis', '@deepseek-ai/dsh-llm', '@deepseek-ai/dsh-session', '@deepseek-ai/dsh-session-projection',
   '@deepseek-ai/dsh-system-prompt', '@deepseek-ai/dsh-tools', '@deepseek-ai/dsh-agent', '@deepseek-ai/dsh-agent-loop', '@deepseek-ai/dsh-session-persistence-jsonl',

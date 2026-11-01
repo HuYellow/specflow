@@ -6,7 +6,10 @@ DeepSeek Harness。安装后，在一个已打开的会话右侧添加 **Specflo
 
 ## 兼容版本
 
-- DeepSeek Harness **0.2.1-rc.2**。插件声明精确的 `engines.dsh`，其他版本需要重新验证。
+- DeepSeek Harness **`0.2.1-rc.2` 及以上**。插件声明向上兼容的 `engines.dsh` 范围
+  （`>=0.2.1-rc.2`），已在 `0.2.1-rc.4` 通过安装、宿主激活与执行验收。DSH 的升级保持
+  插件所用 API 向下兼容，因此插件不随每个 DSH 版本重新发布；低于 `0.2.1-rc.2` 的宿主
+  仍会跳过该插件。
 - 宿主进程 **Node.js 24+**，以及本机 Git。桌面版使用 Electron 内嵌的 Node，
   全局 `node --version` 不能证明桌面宿主兼容。
 - 这是独立的 DSH 插件；安装包包含共享工程核心和插件界面，执行阶段使用 Harness
@@ -121,7 +124,7 @@ npm run dsh:test
 npm run dsh:pack
 ```
 
-产物为 `release/dsh/dsh-plugin-specflow-0.1.1.tgz` 和 `SHA256SUMS.txt`。
+产物为 `release/dsh/dsh-plugin-specflow-0.1.2.tgz` 和 `SHA256SUMS.txt`。
 包内容采用白名单检查，仅包含预构建 Host、浏览器工厂、配置层、说明和许可证。
 源代码、测试、缓存、Electron、Maka、OpenCode 和其他本机数据不会进入包。
 浏览器使用 DSH 共享的 React，未打入第二份 React。
@@ -140,7 +143,7 @@ npm run dsh:pack
 ```powershell
 New-Item -ItemType Directory -Force .tools/dsh-validation
 Push-Location .tools/dsh-validation
-npm install --ignore-scripts --no-audit --no-fund --registry https://registry.npmjs.org @deepseek-ai/dsh@0.2.1-rc.2
+npm install --ignore-scripts --no-audit --no-fund --registry https://registry.npmjs.org @deepseek-ai/dsh@0.2.1-rc.4
 Pop-Location
 npm run dsh:smoke
 ```

@@ -1,7 +1,9 @@
 # DSH 生态分发与维护
 
-Specflow 的插件独立于桌面安装包公开分发。当前版本为 `dsh-plugin-specflow@0.1.1`，
-支持 DSH `0.2.1-rc.2`、宿主 Node.js 24+ 和 Git。
+Specflow 的插件独立于桌面安装包公开分发。当前 npm 版本为 `dsh-plugin-specflow@0.1.1`；
+`0.1.2` 把 DSH 兼容声明改为向上兼容的 `>=0.2.1-rc.2`，已作为固定提交的 Git 分发和
+市场索引发布，并在 `0.2.1-rc.4` 通过安装、宿主激活、执行与重启验收；npm 包待发布。
+插件同样要求宿主 Node.js 24+ 和 Git。
 
 ## 用户安装入口
 
@@ -72,7 +74,9 @@ npm run dsh:market -- validate
 npm run dsh:market -- verify-remote
 ```
 
-`generate` 和 `validate` 使用已安装的官方 DSH `0.2.1-rc.2` 索引校验器。
+`generate` 和 `validate` 使用已安装的官方 DSH 索引校验器，其版本需满足插件的兼容范围
+（当前为 `0.2.1-rc.4`）。索引只描述已发布版本，因此工作区版本尚未发布时 `validate`
+不会要求索引包含它；发布时应重新生成索引，使最新条目指向该版本的分发提交。
 同时读取固定提交内的 manifest、配置层、Host、客户端和 `build-info.json`，
 校验真实包身份和构建字节。`verify-remote` 要求公网 URL 直接返回 HTTP 200，
 拒绝重定向，并核对远端索引与仓库中的内容一致。
@@ -99,6 +103,36 @@ node scripts/dsh-host-smoke.mjs --source <Release地址或索引中的固定Git�
 
 提交资料明确披露 Windows、指定 DSH 版本、本地模拟模型与浏览器验收的范围。
 社区是否合并或收录由维护者决定，公开提交不代表审核通过。
+
+## 0.1.2 分发记录
+
+DSH 的升级保持插件所用 API 向下兼容，因此插件不再声明精确的 DSH 版本：
+
+- `plugins/deepseek-specflow/package.json` 的 `engines.dsh` 改为 `>=0.2.1-rc.2`，
+  各 `@deepseek-ai/dsh*` peer 声明同步改为同一范围；构建以声明下限的类型为准。
+- 宿主与 SDK 验收改用 DSH 官方的 `evaluatePluginCompatibility`，运行版本落在声明范围内
+  即通过，不再比对固定版本字符串；市场索引的 `engines.dsh` 写入同一范围。
+- 兼容判定实测：`0.2.1-rc.1`、`0.1.9` 仍被跳过，`0.2.1-rc.2`、`0.2.1-rc.4`、`0.2.2`、
+  `0.3.0-rc.1`、`1.0.0` 均可加载。
+
+分发提交为 `05026e2d271ed3853f6bc2b9594bd6fb6fdac095`，标签为
+`dsh-plugin-specflow@0.1.2`，包目录保持 `plugins/deepseek-specflow`。
+预构建包为 `release/dsh/dsh-plugin-specflow-0.1.2.tgz`，436278 字节，
+SHA-256 为 `f5b07d89f798675c72f892a4b1efe4c98a2a732f34b967ba7adafb9ad7c49409`。
+市场索引已指向上述分发提交，经官方 DSH `0.2.1-rc.4` 校验器验收。
+
+验收记录：插件类型检查、生产构建、27 项插件测试、5 项市场测试、291 项核心回归
+（290 项通过，1 项 Windows 专用跳过），以及 `0.2.1-rc.4` 真实底座上的 SDK 执行验收
+（模型派发、工具作用域、JSONL 终止与冷核对）和宿主验收（原生安装、认证 RPC、
+客户端图、重启、锁清理）。本机无 Playwright Chromium，浏览器检查未在本轮执行。
+
+待办：用具有发布权限的 npm 账号发布同一 `.tgz`（需完成双重验证），并在该标签上创建
+GitHub Release 上传 `.tgz` 与 `SHA256SUMS.txt`。两项完成后再把两个 README 的
+“当前版本”改到 `0.1.2`。
+
+CI 的验收运行时仍固定为声明下限 `0.2.1-rc.2`（本机验收使用 `0.2.1-rc.4`）。
+升级该行需要具备 `workflow` 权限的 GitHub 凭据：缺少该权限的 OAuth App 令牌会被
+拒绝推送 `.github/workflows/` 的改动。
 
 ## 0.1.1 公开发布记录
 

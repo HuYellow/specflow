@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-specflow",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Specflow 工程流程工作台：需求、规格、任务、独立复核与人工验收",
   "type": "module",
   "main": "./dist/index.mjs",
@@ -34,7 +34,7 @@
   ],
   "engines": {
     "node": ">=24",
-    "dsh": "0.2.1-rc.2"
+    "dsh": ">=0.2.1-rc.2"
   },
   "publishConfig": {
     "access": "public",
@@ -61,12 +61,12 @@
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "~4.0.5",
-    "@deepseek-ai/dsh-agent": "0.2.1-rc.2",
-    "@deepseek-ai/dsh-client-connection": "0.2.1-rc.2",
-    "@deepseek-ai/dsh-client-ui-session": "0.2.1-rc.2",
-    "@deepseek-ai/dsh-client-ui-sidebar-right": "0.2.1-rc.2",
-    "@deepseek-ai/dsh-home-paths": "0.2.1-rc.2",
-    "@deepseek-ai/dsh-tools": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-agent": ">=0.2.1-rc.2",
+    "@deepseek-ai/dsh-client-connection": ">=0.2.1-rc.2",
+    "@deepseek-ai/dsh-client-ui-session": ">=0.2.1-rc.2",
+    "@deepseek-ai/dsh-client-ui-sidebar-right": ">=0.2.1-rc.2",
+    "@deepseek-ai/dsh-home-paths": ">=0.2.1-rc.2",
+    "@deepseek-ai/dsh-tools": ">=0.2.1-rc.2",
     "@deepseek-ai/schemastery": "~3.18.5",
     "react": "^18.3.1"
   },

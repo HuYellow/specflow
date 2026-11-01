@@ -10,7 +10,9 @@ const root = resolve(import.meta.dirname, '..');
 export const marketIndexUrl = 'https://raw.githubusercontent.com/HuYellow/specflow/main/market/dsh/index.json';
 export const marketIndexPath = join(root, 'market', 'dsh', 'index.json');
 export const repositoryUrl = 'https://github.com/HuYellow/specflow.git';
-export const supportedDshVersion = '0.2.1-rc.2';
+// DSH keeps the APIs plugins consume backward compatible across releases, so the
+// only boundary a plugin needs is the release it was built and verified against.
+export const dshEngineRange = '>=0.2.1-rc.2';
 
 function assertCommit(commit) {
   if (!/^[0-9a-f]{40}$/.test(commit ?? '') || /^0{40}$/.test(commit)) {
@@ -38,8 +40,8 @@ function publicationTimestamp(publishedAt) {
 export function createMarketIndex({ manifest, commit, publishedAt, path }) {
   assertCommit(commit);
   const directory = packagePath(path);
-  if (manifest.name !== 'dsh-plugin-specflow' || !manifest.version || manifest.engines?.dsh !== supportedDshVersion || !manifest.dsh?.bundle?.patch) {
-    throw new Error(`Expected the Specflow bundle manifest with exact DSH compatibility ${supportedDshVersion}.`);
+  if (manifest.name !== 'dsh-plugin-specflow' || !manifest.version || manifest.engines?.dsh !== dshEngineRange || !manifest.dsh?.bundle?.patch) {
+    throw new Error(`Expected the Specflow bundle manifest with DSH compatibility ${dshEngineRange}.`);
   }
   return {
     format: 1,
@@ -66,20 +68,36 @@ export function createMarketIndex({ manifest, commit, publishedAt, path }) {
         version: manifest.version,
         publishTimestamp: publicationTimestamp(publishedAt),
         source: { type: 'git', url: repositoryUrl, commit, ...(directory ? { path: directory } : {}) },
-        engines: { dsh: supportedDshVersion },
+        engines: { dsh: dshEngineRange },
       }],
     }],
   };
 }
 
+/**
+ * Load the official market index reader from an installed DSH runtime.
+ * The runtime only has to satisfy the plugin's declared DSH range, so a newer
+ * official release can validate the index without republishing the plugin.
+ * @param runtimeDirectory - installation whose `@deepseek-ai/dsh` ships the reader.
+ * @returns the reader module, tagged with the DSH release it came from.
+ */
 export async function loadMarketValidator(runtimeDirectory = join(root, '.tools', 'dsh-validation')) {
   const require = createRequire(join(resolve(runtimeDirectory), 'package.json'));
   let manifestPath;
   try { manifestPath = require.resolve('@deepseek-ai/dsh-plugin-market-index/package.json'); }
-  catch { throw new Error(`Install @deepseek-ai/dsh@${supportedDshVersion} in ${runtimeDirectory} before validating the market index.`); }
+  catch { throw new Error(`Install an official @deepseek-ai/dsh release satisfying ${dshEngineRange} in ${runtimeDirectory} before validating the market index.`); }
   const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
-  if (manifest.version !== supportedDshVersion) throw new Error(`The official market validator must be ${supportedDshVersion}, received ${manifest.version}.`);
-  return import(pathToFileURL(require.resolve('@deepseek-ai/dsh-plugin-market-index')).href);
+  const dshRequire = createRequire(require.resolve('@deepseek-ai/dsh/package.json'));
+  const dshVersion = JSON.parse(await readFile(dshRequire.resolve('@deepseek-ai/dsh/package.json'), 'utf8')).version;
+  if (manifest.version !== dshVersion) throw new Error(`The official market validator must ship with DSH ${dshVersion}, received ${manifest.version}.`);
+  const boot = await import(pathToFileURL(dshRequire.resolve('@deepseek-ai/dsh-app-boot')).href);
+  const plugin = JSON.parse(await readFile(join(root, 'plugins', 'deepseek-specflow', 'package.json'), 'utf8'));
+  const incompatibility = boot.evaluatePluginCompatibility(plugin, {}, dshVersion);
+  if (incompatibility !== undefined) {
+    throw new Error(`The market validator runtime ${dshVersion} does not satisfy the plugin requirements ${JSON.stringify(incompatibility.requirements)}.`);
+  }
+  const reader = await import(pathToFileURL(require.resolve('@deepseek-ai/dsh-plugin-market-index')).href);
+  return { ...reader, dshVersion };
 }
 
 export function validateMarketIndex(value, manifest, validator, indexUrl = marketIndexUrl) {
@@ -87,13 +105,16 @@ export function validateMarketIndex(value, manifest, validator, indexUrl = marke
   if (parsed.plugins.length !== 1) throw new Error('The Specflow index must describe exactly one plugin.');
   const plugin = parsed.plugins[0];
   if (plugin.name !== manifest.name) throw new Error('The market package name differs from the plugin manifest.');
-  const version = plugin.versions.find(entry => entry.version === manifest.version);
-  if (!version || version.engines.dsh !== manifest.engines.dsh || version.engines.dsh !== supportedDshVersion) {
-    throw new Error('The market version or exact DSH compatibility differs from the plugin manifest.');
+  // The index lists released versions, so the working tree may already carry the
+  // next one. An entry for the working version must still declare its requirements.
+  const current = plugin.versions.find(entry => entry.version === manifest.version);
+  if (current !== undefined && current.engines.dsh !== manifest.engines.dsh) {
+    throw new Error('The market index declares a different DSH compatibility for the working plugin version.');
   }
+  const version = plugin.versions[0];
   if (version.source.type !== 'git' || version.source.url !== repositoryUrl) throw new Error('The install source must be the public Specflow Git repository.');
   assertCommit(version.source.commit);
-  return { index: parsed, plugin, version, install: validator.marketInstallTarget(plugin.name, version) };
+  return { index: parsed, plugin, version, current, install: validator.marketInstallTarget(plugin.name, version) };
 }
 
 export async function verifyRemoteMarketIndex({ localIndex, manifest, validator, indexUrl = marketIndexUrl, fetchImpl = globalThis.fetch }) {
@@ -181,8 +202,10 @@ async function main() {
     await mkdir(dirname(resolve(values.output)), { recursive: true });
     await writeFile(resolve(values.output), `${JSON.stringify(value, null, 2)}\n`);
   }
-  console.log(`${command === 'generate' ? 'Generated and validated' : 'Validated'} ${resolve(values.output)} with the official DSH ${supportedDshVersion} validator.`);
+  console.log(`${command === 'generate' ? 'Generated and validated' : 'Validated'} ${resolve(values.output)} with the official DSH ${validator.dshVersion} validator.`);
   if (command === 'verify-remote') console.log(`HTTP ${result.status}: public index matches the local index.`);
+  console.log(`Newest published version: ${result.version.version} (DSH ${result.version.engines.dsh})`);
+  if (result.current === undefined) console.log(`Working version ${manifest.version} is not published in the market index yet.`);
   console.log(`Source commit: ${result.version.source.commit}`);
   console.log(`Install source: ${result.install.spec}`);
   console.log(`Public index: ${marketIndexUrl}`);

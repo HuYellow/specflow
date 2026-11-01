@@ -47,7 +47,7 @@ SpecFlow 是面向本地 Git 仓库的软件工程工作台，提供独立桌面
 
 ## 安装 DSH 插件
 
-当前插件为 **`dsh-plugin-specflow@0.1.1`**，兼容 **DSH `0.2.1-rc.2`、宿主 Node.js 24+ 和本机 Git**。DSH 桌面版使用 Electron 内嵌 Node；兼容要求针对宿主进程。
+当前插件为 **`dsh-plugin-specflow@0.1.1`**；`0.1.2` 起兼容声明改为向上兼容的 **DSH `0.2.1-rc.2` 及以上**（`engines.dsh: ">=0.2.1-rc.2"`，已在 `0.2.1-rc.4` 验收），并要求 **宿主 Node.js 24+ 和本机 Git**。DSH 桌面版使用 Electron 内嵌 Node；兼容要求针对宿主进程。
 
 插件已发布到公共 npm 仓库。在 DSH 的 **插件 → 安装第三方插件** 中输入 `dsh-plugin-specflow@0.1.1`，安装后启用。录入平台若接受公共 **npm 包 URL**，可填写包详情页地址：[https://www.npmjs.com/package/dsh-plugin-specflow](https://www.npmjs.com/package/dsh-plugin-specflow)。
 
@@ -189,7 +189,7 @@ npm run dsh:pack
 npm run dsh:smoke
 ```
 
-`dsh:smoke` 使用官方 DSH `0.2.1-rc.2` 验收运行时、本地脚本模型和隔离数据目录，覆盖真实安装、宿主认证、执行与重启，以及原生客户端交互。首次运行需准备 pnpm、官方验收运行时和浏览器，具体命令见 [插件验收准备](plugins/deepseek-specflow/README.md#在本仓库开发和发布)。这些验证不调用付费模型。CI 会执行核心与插件测试、生产构建和 DSH 集成验收，并保存插件包及验收报告。
+`dsh:smoke` 使用官方 DSH 验收运行时（本机用 `0.2.1-rc.4` 验收，CI 固定声明下限 `0.2.1-rc.2`）、本地脚本模型和隔离数据目录，覆盖真实安装、宿主认证、执行与重启，以及原生客户端交互。首次运行需准备 pnpm、官方验收运行时和浏览器，具体命令见 [插件验收准备](plugins/deepseek-specflow/README.md#在本仓库开发和发布)。这些验证不调用付费模型。CI 会执行核心与插件测试、生产构建和 DSH 集成验收，并保存插件包及验收报告。
 
 ## 运行时与数据约定
 

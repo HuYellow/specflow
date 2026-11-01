@@ -174,7 +174,10 @@ async function assertRuntimeCompatibility(profileDir) {
   const actual = JSON.parse(await readFile(join(packageDir('@deepseek-ai/dsh'), 'package.json'), 'utf8')).version;
   const installed = JSON.parse(await readFile(join(profileDir, 'node_modules', 'dsh-plugin-specflow', 'package.json'), 'utf8'));
   const expected = JSON.parse(await readFile(join(repo, 'plugins', 'deepseek-specflow', 'package.json'), 'utf8'));
-  assert.equal(actual, installed.engines.dsh, 'The release smoke must use the exact DSH release declared by the installed plugin');
+  // Use the official gate so the smoke follows whatever DSH range the release declares.
+  const { evaluatePluginCompatibility } = await load('@deepseek-ai/dsh-app-boot');
+  const incompatibility = evaluatePluginCompatibility(installed, {}, actual);
+  assert.equal(incompatibility, undefined, `The release smoke must run a DSH release the installed plugin declares: ${JSON.stringify(incompatibility?.requirements)}`);
   assert.equal(installed.version, expected.version, 'The release smoke must install the current plugin release');
   return installed.version;
 }
