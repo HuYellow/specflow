@@ -1,8 +1,8 @@
 # DSH 生态分发与维护
 
-Specflow 的插件独立于桌面安装包公开分发。当前 npm 版本为 `dsh-plugin-specflow@0.1.1`；
-`0.1.2` 把 DSH 兼容声明改为向上兼容的 `>=0.2.1-rc.2`，已作为固定提交的 Git 分发和
-市场索引发布，并在 `0.2.1-rc.4` 通过安装、宿主激活、执行与重启验收；npm 包待发布。
+Specflow 的插件独立于桌面安装包公开分发。当前 npm 版本为 `dsh-plugin-specflow@0.1.2`；
+`0.1.2` 把 DSH 兼容声明改为向上兼容的 `>=0.2.1-rc.2`，已通过固定提交的 Git 分发、
+市场索引和 npm 公开发布，并在 `0.2.1-rc.4` 通过安装、宿主激活、执行与重启验收。
 插件同样要求宿主 Node.js 24+ 和 Git。
 
 ## 用户安装入口
@@ -16,11 +16,11 @@ Specflow 的插件独立于桌面安装包公开分发。当前 npm 版本为 `d
 索引由 Specflow 项目维护，使用 DSH 官方 format 1，并明确版本和兼容范围。
 索引的 Git 来源固定到真实分发提交，不会跟随分支后续变动。
 
-在 DSH 的 **安装第三方插件** 入口输入 `dsh-plugin-specflow@0.1.1`。
+在 DSH 的 **安装第三方插件** 入口输入 `dsh-plugin-specflow@0.1.2`。
 CLI/Web 可安装相同固定版本：
 
 ```sh
-dsh plugin --profile web add dsh-plugin-specflow@0.1.1
+dsh plugin --profile web add dsh-plugin-specflow@0.1.2
 dsh web
 ```
 
@@ -46,7 +46,7 @@ profile 中卸载旧插件，再安装新版并重启 DSH。工程数据库、�
 
 Release 不设为仓库的 Latest，桌面应用的最新版本入口继续指向桌面 Release。
 当前公开分发包含 npm、GitHub 安装包和固定提交的 Git 来源。
-安装命令使用 `dsh-plugin-specflow@0.1.1` 固定版本；市场索引继续使用 Git 分发提交。
+安装命令使用 `dsh-plugin-specflow@0.1.2` 固定版本；市场索引继续使用 Git 分发提交。
 
 ## 发布下一版本
 
@@ -127,10 +127,14 @@ SHA-256 为 `f5b07d89f798675c72f892a4b1efe4c98a2a732f34b967ba7adafb9ad7c49409`�
 客户端图、重启、锁清理）。本机无 Playwright Chromium，浏览器检查未在本轮执行。
 
 GitHub Release 已发布在该标签上，附件为上述 `.tgz` 与 `SHA256SUMS.txt`，不设为仓库
-Latest；公网下载的字节数与 SHA-256 已复核一致。待办：用具有发布权限的 npm 账号发布
-同一 `.tgz`（需完成双重验证）；完成后把两个 README 的“当前版本”改到 `0.1.2`。
+Latest；公网下载的字节数与 SHA-256 已复核一致。
 
-CI 的验收运行时仍固定为声明下限 `0.2.1-rc.2`（本机验收使用 `0.2.1-rc.4`）。
+2026-11-01 18:55:22（Asia/Shanghai），同一 `.tgz` 已公开发布到 npm，`latest` 指向
+`0.1.2`。`npm view dsh-plugin-specflow@0.1.2 version` 已返回新版本；从 npm 下载的
+安装包与 GitHub Release 的字节、SHA-256 和 npm 记录的完整性均一致。发布前复跑插件
+类型检查、27 项插件测试和 npm 发布预检，均通过。
+
+CI 与本机的验收运行时均为 `0.2.1-rc.4`，插件声明下限保持 `0.2.1-rc.2`。
 升级该行需要具备 `workflow` 权限的 GitHub 凭据：缺少该权限的 OAuth App 令牌会被
 拒绝推送 `.github/workflows/` 的改动。
 

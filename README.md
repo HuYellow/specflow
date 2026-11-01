@@ -100,13 +100,13 @@ Windows supports in-place updates through the app's Help menu. For current macOS
 
 Run the same engineering core in a **Specflow** tab beside your DSH conversation, using the models configured in your host.
 
-**[npm · dsh-plugin-specflow 0.1.1](https://www.npmjs.com/package/dsh-plugin-specflow)** · [GitHub release](https://github.com/HuYellow/specflow/releases/tag/dsh-plugin-specflow%400.1.1) · [Plugin guide](plugins/deepseek-specflow/README.md)
+**[npm · dsh-plugin-specflow 0.1.2](https://www.npmjs.com/package/dsh-plugin-specflow)** · [GitHub release](https://github.com/HuYellow/specflow/releases/tag/dsh-plugin-specflow%400.1.2) · [Plugin guide](plugins/deepseek-specflow/README.md)
 
 Requires **DSH `0.2.1-rc.2` or newer**, **host Node.js 24+**, and **local Git**. From `0.1.2` the plugin declares the open range `engines.dsh: ">=0.2.1-rc.2"` and is verified on `0.2.1-rc.4`: DSH keeps the plugin APIs backward compatible, so newer hosts load the same build, while older ones are still skipped. The desktop app, Maka, and OpenCode are not required.
 
-In DSH, open **Plugins → Install Third-Party Plugin** and enter `dsh-plugin-specflow@0.1.1`. Enable it and open the Specflow workbench in the right sidebar. The panel links the current conversation's repository automatically; you can also select a repository manually. Assign role models and verification commands, then create a work item.
+In DSH, open **Plugins → Install Third-Party Plugin** and enter `dsh-plugin-specflow@0.1.2`. Enable it and open the Specflow workbench in the right sidebar. The panel links the current conversation's repository automatically; you can also select a repository manually. Assign role models and verification commands, then create a work item.
 
-For a catalog that accepts a public **npm package URL**, use [https://www.npmjs.com/package/dsh-plugin-specflow](https://www.npmjs.com/package/dsh-plugin-specflow). The [GitHub release](https://github.com/HuYellow/specflow/releases/tag/dsh-plugin-specflow%400.1.1) also provides a prebuilt `.tgz` and `SHA256SUMS.txt`; DSH accepts the tarball URL or its local absolute path.
+For a catalog that accepts a public **npm package URL**, use [https://www.npmjs.com/package/dsh-plugin-specflow](https://www.npmjs.com/package/dsh-plugin-specflow). The [GitHub release](https://github.com/HuYellow/specflow/releases/tag/dsh-plugin-specflow%400.1.2) also provides a prebuilt `.tgz` and `SHA256SUMS.txt`; DSH accepts the tarball URL or its local absolute path.
 
 To update an installed plugin, save edits and stop active Specflow operations, uninstall it in the same DSH profile, install the new package, and restart DSH. Engineering data is retained. If you configured a custom `dataDir`, keep that value after reinstalling.
 
@@ -116,7 +116,7 @@ To update an installed plugin, save edits and stop active Specflow operations, u
 For the CLI/Web profile:
 
 ```sh
-dsh plugin --profile web add dsh-plugin-specflow@0.1.1
+dsh plugin --profile web add dsh-plugin-specflow@0.1.2
 dsh web
 ```
 
