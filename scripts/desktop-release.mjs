@@ -80,6 +80,14 @@ export async function assembleDesktopRelease({ input, output, version, config, t
     if (!expected.includes(info.path) || info.sha512 !== info.files.find(file => file.url === info.path)?.sha512) throw new Error(`Legacy update metadata does not match files: ${target.manifest}`);
     const smoke = JSON.parse(await readFile(join(directory, `desktop-smoke-${target.platform === 'win' ? 'win32' : 'darwin'}-${target.arch}.json`), 'utf8'));
     if (smoke.passed !== true || smoke.packaged !== true || smoke.arch !== target.arch || smoke.platform !== (target.platform === 'win' ? 'win32' : 'darwin')) throw new Error(`Packaged smoke test did not pass: ${target.directory}`);
+    if (target.platform === 'mac') {
+      const build = JSON.parse(await readFile(join(directory, 'desktop-build.json'), 'utf8'));
+      if (build.version !== version || build.platform !== 'darwin' || build.arch !== target.arch || build.signatureVerified !== true || !Array.isArray(build.artifacts) || build.artifacts.length !== expected.length) throw new Error(`macOS artifact signature verification is missing: ${target.directory}`);
+      for (const name of expected) {
+        const verified = build.artifacts.find(artifact => artifact.name === name);
+        if (verified?.sha256 !== createHash('sha256').update(await readFile(join(directory, name))).digest('hex')) throw new Error(`macOS artifact differs from signature verification: ${name}`);
+      }
+    }
     const existing = manifests.get(target.manifest);
     if (existing) existing.files.push(...info.files);
     else manifests.set(target.manifest, { ...info, files: [...info.files] });

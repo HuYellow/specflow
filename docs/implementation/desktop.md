@@ -1,6 +1,6 @@
 # SpecFlow 桌面安装、更新与发布
 
-更新日期：2026-10-31。目标平台为 Windows x64、macOS Apple Silicon 和 macOS Intel。桌面版使用独立 Electron 窗口，自动管理本地工程服务与 Maka Runtime Host。
+更新日期：2026-11-03。目标平台为 Windows x64、macOS Apple Silicon 和 macOS Intel。桌面版使用独立 Electron 窗口，自动管理本地工程服务与 Maka Runtime Host。
 
 当前内置 Maka 0.2.0 从 Apache 签名正式源码发行版构建，仅包含 Runtime Host 及生产依赖。源码、编译器、测试、CLI/Eval 和构建缓存不进入桌面包；禁止使用 dev、nightly、snapshot、RC、占位包或其他开发构建替代正式版本。Maka 为默认内置底座，也可选择已注册的 OpenCode 适配器连接本机单独安装的服务；切换只影响新尝试，历史执行身份保留。详见 [运行时管理](maka-runtime-management.md) 和 [底座接入与切换](execution-backends.md)。
 
@@ -25,6 +25,16 @@ Windows 已有打包程序本机验收记录。2026-10-31 已完成 macOS 27.2 A
 2026-10-20 已正式发布 [SpecFlow 0.1.3](https://github.com/HuYellow/specflow/releases/tag/desktop-v0.1.3)，并设为 Latest。[原生 CI](https://github.com/HuYellow/specflow/actions/runs/39369191126) 的 Windows x64、macOS arm64、macOS x64 及发布任务全部通过：各平台 151 项测试、原生安装包构建、源码目录外启动及完整打包验收成功；Windows 另通过 17 个安装目录路径案例和 5 次静默目录检查。三个目标来自标签提交 `9d1d2195cf7212092d3abe0afdf5e25ad457a39c`。首次发布修复了 macOS 源码真实路径比较、空证书链接、随包 npm 链接，以及 901–1119px 紧凑桌面导航入口。
 
 发行页包含五个安装文件（Windows EXE、两个 macOS 架构的 DMG/ZIP）、五个 blockmap、Windows/macOS 更新清单与 SHA-256 校验文件，共 13 项。发布后已确认正式非预发布状态、Latest 指向、标签提交、资产完整性、GitHub 上传 SHA-256 与 `SHA256SUMS.txt` 一致，以及更新清单的版本和安装包大小。以上验收不代表安装包已签名、公证，也不代表跨版本升级已实际完成。
+
+## macOS 免费分发版本首次打开
+
+从 0.2.1 的构建脚本起，缺少 Developer ID 签名与公证配置时，使用完整的 ad-hoc 签名。它不需要 Apple 开发者会员，但不验证发布者身份，也不等同于 Apple 公证；系统仍可能拦截首次打开。GitHub 上已发布的 0.2.0 有签名完整性缺陷，重新下载同一安装包不能修复，应使用包含此修复的新版本。
+
+1. 下载匹配芯片的 DMG，将 SpecFlow 拖入 Applications，然后推出 DMG。
+2. 从「应用程序」打开 SpecFlow；若系统拦截，进入「系统设置 → 隐私与安全性」。
+3. 核对下载来源与 `SHA256SUMS.txt` 后，在 SpecFlow 对应提示旁选择「仍要打开」，按系统提示确认。
+
+不要关闭整个系统的 Gatekeeper。若没有「仍要打开」选项，或系统提示恶意软件，请停止安装并反馈系统版本与完整提示。首次打开流程以 [Apple 官方说明](https://support.apple.com/zh-cn/102445) 为准。
 
 ## 检查与安装更新
 
@@ -94,7 +104,13 @@ npm run desktop:package:mac:x64
 
 直接运行 `npm run desktop:package:mac` 使用当前 Mac 架构。构建必须匹配系统和 CPU 架构：Windows 不能可靠保留 macOS 包的符号链接、可执行权限和本地模块，脚本因此拒绝跨系统或跨架构打包。
 
+DMG 安装窗口使用 `build/desktop/background.png` 和 `background@2x.png`，由 electron-builder 自动读取并合成 Retina 背景。窗口内说明拖入 Applications、复制后从「应用程序」打开，以及推出磁盘映像。可编辑源文件为同目录的 `background.svg`；修改后需同步渲染 540×380 和 1080×760 两张 PNG，保留默认图标中心坐标 `(130, 220)`、`(410, 220)`，图标及文件名由 Finder 显示。
+
 Node.js 运行时来自 nodejs.org，构建时校验官方 `SHASUMS256.txt`，记录保存在包内 `runtime-integrity.json`。Maka 准备、运行和打包均检查 `config/maka-release.json` 中固定的版本、来源、源码校验和及签名者指纹。无法取得或适配正式发行版时构建失败，不回退到开发包。
+
+macOS 缺少正式签名及公证凭据时，生成的打包配置明确设置 `identity: "-"`，为应用、Helper、Framework 及内置运行时生成完整 ad-hoc 签名。免费模式关闭证书时间戳请求（`timestamp: "none"`），单独使用 `entitlements.adhoc.mac.plist`，保留 Hardened Runtime 和 JIT 权限，并为没有 Team ID 的 Electron 框架关闭 library validation；正式签名继续使用原权限文件。
+
+本地打包后运行 `node scripts/desktop-ci.mjs record`：它检查未压缩应用，并只读挂载最终 DMG、解压最终 ZIP，分别校验应用和内置 Node 的签名、应用版本及 CPU 架构。校验结果与文件 SHA-256 写入 `release/desktop-build.json`；发布汇总拒绝缺少记录或与记录哈希不符的 macOS 资产。`signed: false` 表示没有 Developer ID 身份，不再代表可以跳过签名完整性校验。
 
 产物写入 `release/`。安装包以 `package.json` 的 `version` 命名，版本变更后，示例文件名中的 `<版本>` 随之变化。
 

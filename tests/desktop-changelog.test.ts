@@ -77,6 +77,12 @@ test('download links cover every native architecture and expose only evidence-ba
   assert.match(notes, /Windows Authenticode：已签名/);
   assert.match(notes, /macOS Developer ID：未签名/);
   assert.match(notes, /Apple 公证：未公证/);
+  assert.match(notes, /macOS 未公证版本首次打开/);
+  assert.match(notes, /仍要打开/);
+  assert.match(notes, /不要关闭整个系统的 Gatekeeper/);
+  assert.match(notes, /最终 DMG\/ZIP/);
+  const notarized = renderDesktopChangelog({ ...evidence, capabilities: { macSigned: true, macNotarized: true } });
+  assert.ok(!notarized.includes('macOS 未公证版本首次打开'));
   assert.ok(notes.includes(`/commit/${sha('a')}`));
 });
 

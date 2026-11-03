@@ -43,6 +43,8 @@ SpecFlow 是面向本地 Git 仓库的软件工程工作台，提供独立桌面
 
 当前安装包尚未配置 Windows Authenticode、macOS Developer ID 签名及 Apple 公证。构建、数据位置与安装问题见 [桌面安装、更新与发布说明](docs/implementation/desktop.md)。
 
+从 0.2.1 构建脚本起，macOS 免费分发版本使用完整 ad-hoc 签名，首次运行仍需手动允许，详见 [首次打开步骤](docs/implementation/desktop.md#macos-免费分发版本首次打开)。此前已发布的 0.2.0 macOS 包签名无效，需使用包含本次修复的新版本。
+
 **macOS 本机验证（2026-10-31）**：Apple Silicon 本地构建已在 macOS 27.2 通过原生验证，包括 290 项测试（另 1 项 Windows 专用测试跳过）、正式 Maka Host、DMG/ZIP 打包及打包版 CSV 工程闭环。本次覆盖 ARM64；受测提交、其他桌面操作与验证边界见 [macOS 验收记录](docs/implementation/macos-validation.md)。
 
 ## 安装 DSH 插件

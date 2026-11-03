@@ -81,7 +81,9 @@ The app includes Electron, Node.js 24, npm, and the Maka Runtime Host. Install *
 <details>
 <summary>Installer checksums, signing, and updates</summary>
 
-Release assets include `SHA256SUMS.txt`. Current installers are unsigned; macOS builds are also not notarized.
+Release assets include `SHA256SUMS.txt`. Current installers do not use Windows Authenticode or macOS Developer ID signing; macOS builds are not notarized.
+
+Starting with the 0.2.1 build scripts, macOS packages use complete ad-hoc signatures when Developer ID signing and notarization are unavailable. They still require manual approval on first launch; see the [first-launch instructions](docs/implementation/desktop.md#macos-免费分发版本首次打开). The previously published 0.2.0 macOS packages have invalid signatures and need a new release containing this fix.
 
 Windows supports in-place updates through the app's Help menu. For current macOS builds, download a new DMG and replace the app. See the [desktop installation and update guide](docs/implementation/desktop.md).
 

@@ -45,6 +45,7 @@ async function fixture() {
     }
     await writeFile(join(target, platform === 'win' ? 'latest.yml' : 'latest-mac.yml'), stringify({ version: '1.2.3', files, path: files[0].url, sha512: files[0].sha512, releaseDate: '2026-10-15T00:00:00.000Z' }));
     await writeFile(join(target, `desktop-smoke-${platform === 'win' ? 'win32' : 'darwin'}-${arch}.json`), JSON.stringify({ passed: true, packaged: true, platform: platform === 'win' ? 'win32' : 'darwin', arch }));
+    if (platform === 'mac') await writeFile(join(target, 'desktop-build.json'), JSON.stringify({ version: '1.2.3', platform: 'darwin', arch, signatureVerified: true, artifacts: await Promise.all(files.map(async file => ({ name: file.url, sha256: createHash('sha256').update(await readFile(join(target, file.url))).digest('hex') }))) }));
   }
   return { directory, input, output, version: '1.2.3', config, tag: 'desktop-v1.2.3', repository: 'HuYellow/specflow' };
 }
@@ -81,5 +82,21 @@ test('release assembly rejects altered installers, failed package smoke tests an
     await writeFile(blockmap, 'blockmap');
     await rm(path);
     await assert.rejects(release.assembleDesktopRelease(data), /Missing release installer/);
+  } finally { await rm(data.directory, { recursive: true, force: true }); }
+});
+
+test('macOS publication requires signature evidence for the exact final artifacts, including ad-hoc builds', async () => {
+  const data = await fixture();
+  const path = join(data.input, 'SpecFlow-mac-arm64/desktop-build.json');
+  try {
+    const record = JSON.parse(await readFile(path, 'utf8'));
+    await writeFile(path, JSON.stringify({ ...record, signatureVerified: false }));
+    await assert.rejects(release.assembleDesktopRelease(data), /signature verification is missing/);
+    await writeFile(path, JSON.stringify({ ...record, arch: 'x64' }));
+    await assert.rejects(release.assembleDesktopRelease(data), /signature verification is missing/);
+    await writeFile(path, JSON.stringify({ ...record, artifacts: record.artifacts.map((artifact: { name: string; sha256: string }) => ({ ...artifact, sha256: '0'.repeat(64) })) }));
+    await assert.rejects(release.assembleDesktopRelease(data), /differs from signature verification/);
+    await writeFile(path, JSON.stringify(record));
+    await release.assembleDesktopRelease(data);
   } finally { await rm(data.directory, { recursive: true, force: true }); }
 });

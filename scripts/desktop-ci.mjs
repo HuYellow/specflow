@@ -6,6 +6,7 @@ import { promisify } from 'node:util';
 import { pathToFileURL } from 'node:url';
 import { loadDesktopRelease, verifyDesktopReleaseTag } from './desktop-release.mjs';
 import { renderDesktopChangelog } from './desktop-changelog.mjs';
+import { verifyMacArtifacts } from './desktop-macos.mjs';
 
 const exec = promisify(execFile);
 const root = resolve(import.meta.dirname, '..');
@@ -179,13 +180,7 @@ async function recordBuild(ctx) {
     const installer = join(root, 'release', `SpecFlow-${ctx.version}-win-${process.arch}.exe`);
     record.signed = await readWindowsSignature(installer);
   } else if (process.platform === 'darwin') {
-    const application = join(root, `release/${process.arch === 'arm64' ? 'mac-arm64' : 'mac'}/SpecFlow.app`);
-    const signature = await exec('codesign', ['-dv', '--verbose=4', application]).catch(() => ({ stderr: '' }));
-    record.signed = signature.stderr.includes('Authority=Developer ID Application:');
-    if (record.signed) {
-      await exec('codesign', ['--verify', '--deep', '--strict', application]);
-      record.notarized = await exec('xcrun', ['stapler', 'validate', application]).then(() => true, () => false);
-    }
+    Object.assign(record, await verifyMacArtifacts(join(root, 'release'), ctx.version, process.arch));
   } else throw new Error('Build provenance requires a native Windows or macOS runner.');
   await writeFile(join(root, 'release/desktop-build.json'), `${JSON.stringify(record, null, 2)}\n`);
   console.log(JSON.stringify(record, null, 2));

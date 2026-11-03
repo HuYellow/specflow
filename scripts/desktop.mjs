@@ -87,7 +87,20 @@ async function prepare() {
   await writeFile(join(staging, 'electron-builder.json'), JSON.stringify({
     extends: join(root, 'electron-builder.yml'),
     publish: desktopPublishConfiguration(release),
-    ...(platform === 'darwin' ? { forceCodeSigning: capabilities.automaticUpdates, mac: { notarize: capabilities.automaticUpdates } } : {}),
+    ...(platform === 'darwin' ? {
+      forceCodeSigning: true,
+      mac: {
+        notarize: capabilities.automaticUpdates,
+        ...(!capabilities.automaticUpdates ? {
+          identity: '-',
+          timestamp: 'none',
+          // Ad-hoc identities have no Team ID. Electron's frameworks therefore
+          // need library validation disabled while retaining the hardened runtime.
+          entitlements: join(root, 'build/desktop/entitlements.adhoc.mac.plist'),
+          entitlementsInherit: join(root, 'build/desktop/entitlements.adhoc.mac.plist'),
+        } : {}),
+      },
+    } : {}),
   }, null, 2));
   // Runtime deps use the workspace lock; Electron/build tools stay outside the shipped backend.
   await cp(join(root, 'package.json'), join(resources, 'package.json'));

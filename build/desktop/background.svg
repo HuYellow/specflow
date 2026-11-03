@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="540" height="380" viewBox="0 0 540 380">
+  <title>SpecFlow macOS 安装指引</title>
+  <desc>将 SpecFlow 拖入 Applications 文件夹，复制完成后从应用程序中打开，再推出磁盘映像。</desc>
+  <!-- electron-builder uses the PNG pair beside this source automatically.
+       Keep 540×380 and the default icon centers (130, 220) and (410, 220).
+       Render at 1× and 2×; do not draw the interactive Finder icons or labels. -->
+  <defs>
+    <radialGradient id="glow" cx="100%" cy="0%" r="90%">
+      <stop offset="0" stop-color="#e5ede2"/>
+      <stop offset="1" stop-color="#f6f6f1"/>
+    </radialGradient>
+  </defs>
+  <rect width="540" height="380" fill="url(#glow)"/>
+  <g font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif">
+    <g transform="translate(36 26) scale(.028)">
+      <rect width="1024" height="1024" rx="244" fill="#0b403b"/>
+      <path d="M292 332h252c80 0 126 48 126 108s-46 108-126 108H406c-58 0-86 30-86 70s28 74 86 74h326" fill="none" stroke="#e7edcd" stroke-width="64" stroke-linecap="round"/>
+      <circle cx="292" cy="332" r="54" fill="#dba373"/>
+      <circle cx="732" cy="692" r="54" fill="#dba373"/>
+    </g>
+    <text x="74" y="46" fill="#0b403b" font-size="19" font-weight="650" letter-spacing="-.5">SpecFlow</text>
+    <rect x="420" y="29" width="84" height="23" rx="11.5" fill="#e6ece2"/>
+    <text x="462" y="44" text-anchor="middle" fill="#506859" font-size="10" font-weight="500">macOS 安装</text>
+
+    <text x="36" y="100" fill="#163e35" font-size="26" font-weight="600" letter-spacing="-.6">拖入应用程序，即可安装。</text>
+    <text x="36" y="123" fill="#61736a" font-size="12">Drag SpecFlow into Applications to install.</text>
+
+    <rect x="36" y="148" width="468" height="152" rx="20" fill="#ffffff" stroke="#dee5db"/>
+    <g fill="#6b7c72" font-size="10" font-weight="500" text-anchor="middle">
+      <text x="130" y="168">01 · 拖动应用</text>
+      <text x="410" y="168">02 · 放入文件夹</text>
+    </g>
+    <text x="270" y="203" text-anchor="middle" fill="#75867a" font-size="10.5">拖动安装</text>
+    <path d="M220 223h98m-9-9 9 9-9 9" fill="none" stroke="#296553" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="220" cy="223" r="3.5" fill="#dba373"/>
+
+    <circle cx="46" cy="330" r="10" fill="#e2eade"/>
+    <path d="m42 330 2.5 2.5 4.5-5" fill="none" stroke="#296553" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="66" y="334" fill="#345446" font-size="11.5">复制完成后，从「应用程序」打开 SpecFlow。</text>
+    <text x="66" y="353" fill="#738176" font-size="10.5">随后可在 Finder 侧边栏推出此磁盘映像。</text>
+  </g>
+</svg>
