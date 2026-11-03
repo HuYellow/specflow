@@ -38,7 +38,7 @@ export async function verifyMacArtifacts(directory, version, arch) {
       await verifyMacApplication(packagedApplication);
       const packagedVersion = await exec('plutil', ['-extract', 'CFBundleShortVersionString', 'raw', '-o', '-', join(packagedApplication, 'Contents/Info.plist')]);
       if (packagedVersion.stdout.trim() !== version) throw new Error(`macOS artifact version differs: ${name}`);
-      await exec('lipo', ['-verify_arch', arch === 'x64' ? 'x86_64' : arch, join(packagedApplication, 'Contents/MacOS/SpecFlow')]);
+      await exec('lipo', [join(packagedApplication, 'Contents/MacOS/SpecFlow'), '-verify_arch', arch === 'x64' ? 'x86_64' : arch]);
       artifacts.push({ name, sha256: createHash('sha256').update(await readFile(artifact)).digest('hex') });
     } finally {
       if (mounted) await exec('hdiutil', ['detach', mountpoint]);
