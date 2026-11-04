@@ -1,4 +1,4 @@
-import { _electron as electron } from '@playwright/test';
+import { _electron as electron, expect } from '@playwright/test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { cp, mkdtemp, mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
@@ -114,16 +114,18 @@ try {
   record.checks.push('single instance');
   const bootstrap = await page.evaluate(async () => await (await fetch('/api/bootstrap')).json());
   const repositoryPath = bootstrap.projects[0].rootPath;
-  await application.evaluate(({ dialog }, path) => { dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [path] }); }, repositoryPath);
+  await application.evaluate(({ dialog }, path) => { const original = dialog.showOpenDialog; dialog.showOpenDialog = async () => { dialog.showOpenDialog = original; return { canceled: false, filePaths: [path] }; }; }, repositoryPath);
   const navigationToggle = page.getByRole('button', { name: '展开工程导航', exact: true });
   if (await navigationToggle.isVisible()) await navigationToggle.click();
+  const openedRepository = page.waitForResponse(response => new URL(response.url()).pathname === '/api/projects' && response.request().method() === 'POST');
   await page.getByRole('button', { name: '打开 Git 仓库', exact: true }).click();
-  await page.getByRole('button', { name: '选择仓库文件夹' }).click();
-  const repositoryInput = page.getByRole('dialog').getByRole('textbox').first();
-  await repositoryInput.waitFor();
-  assert.equal(await repositoryInput.inputValue(), repositoryPath);
-  await page.getByRole('button', { name: '关闭对话框' }).click();
-  record.checks.push('native repository selection bridge (dialog selection stubbed)');
+  const repositoryResponse = await openedRepository; assert.ok(repositoryResponse.ok());
+  assert.equal((await repositoryResponse.json()).id, bootstrap.projects[0].id);
+  await expect(page.getByRole('button', { name: '工程工作空间', exact: true })).toHaveAttribute('data-current-workspace', bootstrap.projects[0].id);
+  await expect(page.locator('.modal')).toHaveCount(0);
+  const reopened = await page.evaluate(async () => await (await fetch('/api/bootstrap')).json());
+  assert.equal(reopened.projects.length, bootstrap.projects.length); assert.equal(reopened.workItems.length, bootstrap.workItems.length);
+  record.checks.push('native repository selection directly opens the workspace; reopening the same directory preserves its identity and creates no work item (dialog selection stubbed)');
   if (!approvedMaka) {
     await page.getByRole('button', { name: /工程设置/ }).first().click();
     const settings = page.getByRole('dialog');

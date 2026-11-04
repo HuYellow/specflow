@@ -86,6 +86,10 @@ export async function createApp(service: EngineeringService, options: { staticRo
     return service.saveProjectGuidance(param(request), body.name, body.content, body.expectedHash);
   });
   commandRoute('/api/projects', async request => { const body = z.object({ rootPath: z.string().min(1), name: z.string().optional() }).parse(request.body); return service.registerProject(body.rootPath, body.name, false, normalizeLocale(request.headers['accept-language'])); });
+  commandRoute('/api/projects/:id/rename', request => {
+    const body = z.object({ name: z.string().trim().min(1), expectedRevision: z.number().int().positive() }).parse(request.body);
+    return service.store.update('projects', param(request), { name: body.name }, body.expectedRevision);
+  });
   commandRoute('/api/projects/:id/configure', async request => {
     const body = z.object({ expectedRevision: z.number().int().positive(), executionBackend: z.enum(backendIds).optional(), rules: z.string(), commands: z.array(command).min(1), defaults: z.object({ analyst: target.optional(), architect: target.optional(), developer: target.optional(), reviewer: target.optional() }) }).parse(request.body);
     const { expectedRevision, ...patch } = body;

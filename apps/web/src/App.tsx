@@ -1,7 +1,7 @@
 import { t, useLocale } from './i18n.ts';
 import { LanguageSwitcher } from './LanguageSwitcher.tsx';
 import { useEffect, useRef, useState } from 'react';
-import { Activity, Bell, Check, CheckCircle2, ChevronRight, CircleDot, Code2, Download, FileText, FolderGit2, GitBranch, Layers3, Loader2, Menu, MoreHorizontal, Plus, Search, RefreshCcw, Settings2, X } from 'lucide-react';
+import { Activity, Bell, Check, CheckCircle2, ChevronRight, CircleDot, Code2, Download, FileText, FolderGit2, GitBranch, Layers3, Loader2, Menu, MoreHorizontal, Pencil, Plus, Search, RefreshCcw, Settings2, X } from 'lucide-react';
 import type { Project, WorkItem } from '../../../packages/domain/index.ts';
 import { api, ApiError } from './api.ts';
 import { Workspace, logicalLabels, short, fmt, type Snapshot, type Tab, type BackendCatalog } from './context.tsx';
@@ -51,7 +51,7 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [itemQuery, setItemQuery] = useState('');
   const [toast, setToast] = useState<{ message: string; error?: boolean }>();
-  const [modal, setModal] = useState<'project' | 'item' | 'workflow' | 'settings' | 'import' | null>(null);
+  const [modal, setModal] = useState<'project' | 'rename' | 'item' | 'workflow' | 'settings' | 'import' | null>(null);
   const [detail, setDetail] = useState<'pending' | 'run' | null>(null);
   const sidebar = useRef<HTMLElement>(null);
   const navigationToggle = useRef<HTMLButtonElement>(null);
@@ -87,6 +87,16 @@ export default function App() {
   const openModal = (value: typeof modal) => {
     if (value && !modal) dialogTrigger.current = sidebarOpen ? navigationToggle.current : document.activeElement as HTMLElement;
     setSidebarOpen(false); setDetail(null); setModal(value);
+  };
+  const openProject = () => {
+    if (!window.specflowDesktop) { openModal('project'); return; }
+    setSidebarOpen(false); setDetail(null);
+    void perform(async () => {
+      const rootPath = await window.specflowDesktop!.pickRepository();
+      if (!rootPath) return;
+      const project = await api<Project>('/projects', { rootPath });
+      await refresh(undefined, project.id);
+    });
   };
   const openRun = (id: string) => {
     if (!detail) {
@@ -227,7 +237,7 @@ export default function App() {
     <aside ref={sidebar} id="workspace-navigation" tabIndex={-1} className={`sidebar ${sidebarOpen ? 'is-expanded' : ''}`} aria-label={t("工程导航")} role={sidebarOpen ? 'dialog' : undefined} aria-modal={sidebarOpen || undefined} inert={!!modal || !!detail}>
       <button className="sidebar-close icon-button" aria-label={t("关闭工程导航")} onClick={() => setSidebarOpen(false)}><X size={20} /></button>
       <a className="brand" href="/" aria-label={t("SpecFlow 首页")}><span className="brand-mark"><Layers3 size={23} /></span><span>specflow<span className="brand-dot">.</span></span></a>
-      <div className="workspace-label">{t("工程工作空间")} <span>LOCAL</span><button className="workspace-open-button" disabled={busy} onClick={() => openModal('project')} aria-label={t("打开 Git 仓库")} title={t("打开 Git 仓库，添加工作空间")}><Plus size={16} /></button></div>
+      <div className="workspace-label">{t("工程工作空间")}<button className="workspace-open-button" disabled={busy || !project} onClick={() => openModal('rename')} aria-label={t("重命名工作空间")} title={t("重命名工作空间")}><Pencil size={14} /></button><button className="workspace-open-button" disabled={busy} onClick={openProject} aria-label={t("打开 Git 仓库")} title={t("打开 Git 仓库，添加工作空间")}><Plus size={16} /></button></div>
       <WorkspaceSwitcher projects={bootstrap?.projects || []} value={view.project} disabled={busy || !bootstrap?.projects.length} onChange={id => { setSidebarOpen(false); void refresh(undefined, id).catch(error => setToast({ message: error.message, error: true })); }} />
       <div className="section-label">{t("工作项")} <span>{items.length}</span><button disabled={!project || busy} onClick={() => openModal('item')} aria-label={t("新建工作项")}><Plus size={16} /></button></div>
       <label className="item-search"><Search size={14} /><input type="search" aria-label={t("搜索当前空间工作项")} placeholder={t("搜索工作项")} value={itemQuery} onChange={event => setItemQuery(event.target.value)} /></label>
@@ -250,11 +260,11 @@ export default function App() {
           if (next !== undefined) { event.preventDefault(); setTab(tabs[next].id); document.getElementById(`tab-${tabs[next].id}`)?.focus(); }
         }}><tab.icon size={16} />{t(tab.name)}{tab.id === 'artifacts' && !!artifacts.length && <span>{artifacts.length}</span>}</button>)}</div><div className="tab-info" aria-live="off" title={lastSync ? t("最后成功同步 {0}", {"0": fmt(lastSync)}) : undefined}>{refreshing ? <Loader2 size={12} className="spin" /> : <span className={loadError ? 'offline-dot' : 'online-dot'} />}{refreshing ? t("正在同步") : loadError ? t("同步失败") : t("同步于 {0}", {"0": lastSync ? fmt(lastSync).split(' ').at(-1) : '—'})}</div></div>
         <div role="tabpanel" id={`panel-${view.view}`} aria-labelledby={`tab-${view.view}`} tabIndex={0}>{view.view === 'flow' ? <Flow /> : view.view === 'requirements' ? <Requirements /> : view.view === 'artifacts' ? <Documents /> : view.view === 'code' ? <CodeView /> : <Runs />}</div>
-      </> : <section className="workspace-empty" aria-busy={refreshing}><div className="workspace-empty-symbol">{(!bootstrap || view.item) && !loadError ? <Loader2 size={32} className="spin" /> : <FolderGit2 size={35} />}</div><span className="eyebrow">ENGINEERING WORKSPACE</span><h1>{loadError ? t("无法读取工程数据") : !bootstrap ? t("正在加载工作空间") : project?.name || t("打开一个工程工作空间")}</h1><code>{project?.rootPath || t("每个空间对应一个项目目录")}</code><h2>{loadError ? t("请重试加载") : !bootstrap || view.item ? t("正在读取本地工程数据…") : project ? t("该工作空间还没有工作项") : t("从 Git 项目目录开始")}</h2><p>{t(loadError) || t("在工作空间中管理每个工作项的需求、流程、代码和产物。")}</p>{(bootstrap || loadError) && <button className="primary-button" disabled={busy || refreshing} onClick={() => loadError || view.item ? void manualRefresh() : openModal(project ? 'item' : 'project')}>{loadError || view.item ? <RefreshCcw size={16} /> : <Plus size={16} />}{loadError ? t("重试加载") : view.item ? t("重新读取工作项") : project ? t("在此空间新建工作项") : t("打开 Git 仓库")}</button>}</section>}
+      </> : <section className="workspace-empty" aria-busy={refreshing}><div className="workspace-empty-symbol">{(!bootstrap || view.item) && !loadError ? <Loader2 size={32} className="spin" /> : <FolderGit2 size={35} />}</div><span className="eyebrow">ENGINEERING WORKSPACE</span><h1>{loadError ? t("无法读取工程数据") : !bootstrap ? t("正在加载工作空间") : project?.name || t("打开一个工程工作空间")}</h1><code>{project?.rootPath || t("每个空间对应一个项目目录")}</code><h2>{loadError ? t("请重试加载") : !bootstrap || view.item ? t("正在读取本地工程数据…") : project ? t("该工作空间还没有工作项") : t("从 Git 项目目录开始")}</h2><p>{t(loadError) || t("在工作空间中管理每个工作项的需求、流程、代码和产物。")}</p>{(bootstrap || loadError) && <button className="primary-button" disabled={busy || refreshing} onClick={() => loadError || view.item ? void manualRefresh() : project ? openModal('item') : openProject()}>{loadError || view.item ? <RefreshCcw size={16} /> : <Plus size={16} />}{loadError ? t("重试加载") : view.item ? t("重新读取工作项") : project ? t("在此空间新建工作项") : t("打开 Git 仓库")}</button>}</section>}
       <footer className="page-footer"><span>{t("空间 → 工作项 → 工程产物")}</span><span>{t("SpecFlow · 工程控制层")}</span></footer></main>
     </div>
     {toast && <div role={toast.error ? 'alert' : 'status'} className={`toast ${toast.error ? 'error' : ''}`}><CircleDot size={17} /><span>{t(toast.message)}</span><button onClick={() => setToast(undefined)} aria-label={t("关闭通知")}><X size={15} /></button></div>}
-    {modal && <Dialogs key={`${modal}-${view.project}`} modal={modal} close={() => setModal(null)} open={openModal} projects={bootstrap?.projects || []} setBackend={setBackend} returnFocus={dialogTrigger} />}
+    {modal && <Dialogs key={`${modal}-${view.project}`} modal={modal} close={() => setModal(null)} setBackend={setBackend} returnFocus={dialogTrigger} />}
     {detail && !modal && <Drawer title={detail === 'pending' ? t("待处理事项 · {0}", {"0": pendingItems.length}) : t("本次运行")} close={() => setDetail(null)} returnFocus={detailTrigger}>{detail === 'run' ? <RunDetail attemptId={view.attempt} /> : <div className="attention-list">{pendingItems.map(item => <button key={item.id} className={`attention-item ${item.stale ? 'stale' : ''}`} onClick={() => openAttention(item)}><span className="attention-kind">{item.kind === 'interaction' ? t("执行交互") : item.kind === 'clarification' ? t("需求澄清") : item.kind === 'finding' ? t("复核发现") : t("文档审阅")}</span><strong>{item.title}</strong><span>{item.detail}</span>{item.stale && <small>{t("依据已变更，先查看原始材料")}</small>}<ChevronRight size={16} /></button>)}{!pendingItems.length && <div className="empty-state"><CheckCircle2 size={28} /><h3>{t("当前没有待处理事项")}</h3><p>{t("后续问题、授权和待审阅产物会出现在这里。")}</p></div>}</div>}</Drawer>}
   </div></Workspace.Provider>;
 }

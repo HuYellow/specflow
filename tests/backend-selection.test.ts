@@ -62,7 +62,7 @@ test('OpenCode 配置区分保留、替换和清除密码，保留输入密码�
 function settings(backend: BackendId, demo = false): string {
   const project: Project = { id: 'project', revision: 1, createdAt: '', updatedAt: '', name: 'Project', rootPath: '/project', baseCommit: 'base', rules: '', defaults: { analyst: backend === 'opencode' ? opencode : maka }, commands: [], demo, executionBackend: backend };
   const context = { project, backend: catalog, isPending: () => false, perform: async () => {}, refresh: async () => {} } as unknown as WorkspaceContext;
-  return renderToStaticMarkup(createElement(Workspace.Provider, { value: context }, createElement(Dialogs, { modal: 'settings', close() {}, open() {}, projects: [project], setBackend() {}, returnFocus: { current: null } })));
+  return renderToStaticMarkup(createElement(Workspace.Provider, { value: context }, createElement(Dialogs, { modal: 'settings', close() {}, setBackend() {}, returnFocus: { current: null } })));
 }
 
 test('工程设置呈现当前底座连接与模型，真实工程不提供 sandbox，认证不回显密码', () => {

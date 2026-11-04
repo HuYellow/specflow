@@ -1,5 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdir, readdir, writeFile } from 'node:fs/promises';
+import { basename, join } from 'node:path';
 import { createApp } from '../apps/server/src/app.ts';
 import { fixture, acceptedDocuments, runNode } from './helpers.ts';
 test('桌面会话保护 bootstrap 与静态资源，允许随机本地端口并拒绝其他来源', async () => {
@@ -37,5 +39,44 @@ test('导入不继承接纳，导出包含版本与运行身份且不包含会�
     const result = await app.inject({ method: 'POST', url: `/api/work-items/${f.item.id}/import`, headers: { 'x-specflow-token': bootstrap.token, 'idempotency-key': 'import-1' }, payload: { artifacts: [{ logicalId: 'spec', content: '# 导入需求\n\n验收：支持正常输入并验证结果。' }] } }); assert.equal(result.statusCode, 200);
     const artifact = f.store.list('artifacts')[0]; assert.equal(artifact.acceptedRevisionId, undefined);
     const exported = await app.inject(`/api/work-items/${f.item.id}/export`); assert.equal(exported.statusCode, 200); assert.equal(exported.json().format, 'specflow-evidence-v1'); assert.ok(!exported.body.includes(bootstrap.token));
+  } finally { await app.close(); await f.cleanup(); }
+});
+test('工作空间登记仅使用目录名，改名保留目录与工作项且重开不覆盖名称', async () => {
+  const f = await fixture(), app = await createApp(f.service);
+  try {
+    const rootPath = join(f.root, 'workspace-project');
+    await mkdir(rootPath); await writeFile(join(rootPath, 'README.md'), '# Workspace');
+    await f.service.workspaces.git(rootPath, ['init']);
+    await f.service.workspaces.checkpoint(rootPath, 'Initialize workspace fixture');
+    // Opening a project is independent of creating an item and permits local edits.
+    await writeFile(join(rootPath, 'draft.md'), 'uncommitted draft');
+    const workItems = f.store.list('workItems'), worktrees = await readdir(join(f.root, 'workspaces'));
+    const token = (await app.inject('/api/bootstrap')).json().token;
+    const headers = { 'x-specflow-token': token, 'idempotency-key': 'register-workspace' };
+    const opened = await app.inject({ method: 'POST', url: '/api/projects', headers, payload: { rootPath } });
+    assert.equal(opened.statusCode, 200, opened.body);
+    const project = opened.json();
+    assert.equal(project.name, basename(rootPath));
+    assert.deepEqual(f.store.list('workItems'), workItems);
+    assert.deepEqual(await readdir(join(f.root, 'workspaces')), worktrees);
+    const url = `/api/projects/${project.id}/rename`, payload = { name: '  我的大项目  ', expectedRevision: project.revision };
+    assert.equal((await app.inject({ method: 'POST', url, payload })).statusCode, 403);
+    const renameHeaders = { ...headers, 'idempotency-key': 'rename-workspace' };
+    const renamed = await app.inject({ method: 'POST', url, headers: renameHeaders, payload });
+    assert.equal(renamed.statusCode, 200, renamed.body);
+    const changed = renamed.json();
+    assert.equal(changed.name, '我的大项目');
+    assert.deepEqual(changed, { ...project, name: changed.name, revision: project.revision + 1, updatedAt: changed.updatedAt });
+    const replayed = await app.inject({ method: 'POST', url, headers: renameHeaders, payload });
+    assert.deepEqual(replayed.json(), changed);
+    const invalid = await app.inject({ method: 'POST', url, headers: { ...headers, 'idempotency-key': 'empty-workspace-name' }, payload: { name: ' \n ', expectedRevision: changed.revision } });
+    assert.equal(invalid.statusCode, 400);
+    const stale = await app.inject({ method: 'POST', url, headers: { ...headers, 'idempotency-key': 'stale-workspace-name' }, payload: { name: '旧页面修改', expectedRevision: project.revision } });
+    assert.equal(stale.statusCode, 409); assert.equal(stale.json().code, 'REVISION_CONFLICT');
+    const reopened = await app.inject({ method: 'POST', url: '/api/projects', headers: { ...headers, 'idempotency-key': 'reopen-workspace' }, payload: { rootPath } });
+    assert.deepEqual(reopened.json(), changed);
+    assert.equal((await app.inject('/api/bootstrap')).json().projects.find((value: { id: string }) => value.id === project.id).name, changed.name);
+    assert.deepEqual(f.store.list('workItems'), workItems);
+    assert.deepEqual(await readdir(join(f.root, 'workspaces')), worktrees);
   } finally { await app.close(); await f.cleanup(); }
 });

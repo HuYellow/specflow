@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
 import { existsSync } from 'node:fs';
@@ -112,6 +112,7 @@ try {
   const dialogs = [
     ['settings', () => page.locator('.top-actions').getByRole('button', { name: 'Project settings', exact: true }).click()],
     ['project', () => page.getByRole('button', { name: 'Open Git repository', exact: true }).click()],
+    ['rename', () => page.getByRole('button', { name: 'Rename workspace', exact: true }).click()],
     ['item', () => page.getByRole('button', { name: 'New work item', exact: true }).click()],
     ['workflow', () => page.getByRole('button', { name: 'Edit workflow', exact: true }).click()],
     ['import', async () => { await page.locator('#tab-artifacts').click(); await page.getByRole('button', { name: 'Import documents', exact: true }).click(); }],
@@ -120,13 +121,43 @@ try {
     await page.setViewportSize({ width, height: 1000 });
     for (const [name, open] of dialogs) {
       await page.goto(location('flow')); await ready();
-      if (width === 390 && ['project', 'item'].includes(name)) await page.getByRole('button', { name: 'Open workspace navigation', exact: true }).click();
+      if (width === 390 && ['project', 'rename', 'item'].includes(name)) await page.getByRole('button', { name: 'Open workspace navigation', exact: true }).click();
       await open(); await expect(page.locator('.modal')).toBeVisible();
       await audit(`${width}-modal-${name}`);
       await page.getByRole('button', { name: 'Close dialog', exact: true }).click();
     }
   }
-  report.checks.push('Project settings, project registration, new work item, workflow editor, and import modals render in English at both viewport sizes.');
+  report.checks.push('Project settings, workspace opening and renaming, new work item, workflow editor, and import modals render in English at both viewport sizes.');
+
+  const browserWorkspaceDirectory = join(dataDir, 'browser-workspace');
+  await mkdir(browserWorkspaceDirectory); await writeFile(join(browserWorkspaceDirectory, 'README.md'), '# Browser workspace\n');
+  const browserWorkspacePath = await realpath(browserWorkspaceDirectory);
+  await service.workspaces.git(browserWorkspacePath, ['init']); await service.workspaces.checkpoint(browserWorkspacePath, 'Initialize browser workspace fixture');
+  await page.setViewportSize({ width: 1440, height: 1000 }); await page.goto(location('flow')); await ready();
+  await page.getByRole('button', { name: 'Open Git repository', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Absolute repository path', exact: true }).fill(browserWorkspacePath);
+  await page.getByRole('button', { name: 'Open workspace', exact: true }).click();
+  const workspaceChooser = page.getByRole('button', { name: 'Project workspace', exact: true });
+  await expect(page.locator('.modal')).toHaveCount(0);
+  await expect(workspaceChooser.locator('.workspace-selected-name')).toHaveText('browser-workspace');
+  await expect(page.getByRole('heading', { name: 'This workspace has no work items yet', exact: true })).toBeVisible();
+  const openedWorkspaceId = await workspaceChooser.getAttribute('data-current-workspace');
+  assert.ok(openedWorkspaceId); assert.equal(store.list('workItems', item => item.projectId === openedWorkspaceId).length, 0);
+  await page.getByRole('button', { name: 'Rename workspace', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Workspace name', exact: true }).fill('Browser project');
+  await page.getByRole('button', { name: 'Save name', exact: true }).click();
+  await expect(page.locator('.modal')).toHaveCount(0); await expect(workspaceChooser.locator('.workspace-selected-name')).toHaveText('Browser project');
+  await page.reload(); await expect(workspaceChooser.locator('.workspace-selected-name')).toHaveText('Browser project');
+  await page.getByRole('button', { name: 'Open Git repository', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Absolute repository path', exact: true }).fill(browserWorkspacePath);
+  await page.getByRole('button', { name: 'Open workspace', exact: true }).click();
+  await expect(page.locator('.modal')).toHaveCount(0); await expect(workspaceChooser).toHaveAttribute('data-current-workspace', openedWorkspaceId);
+  await expect(workspaceChooser.locator('.workspace-selected-name')).toHaveText('Browser project');
+  await expect(page.locator('.workspace-directory')).toHaveText(browserWorkspacePath);
+  assert.equal(store.list('projects', project => project.rootPath === browserWorkspacePath).length, 1);
+  assert.equal(store.list('workItems', item => item.projectId === openedWorkspaceId).length, 0);
+  report.checks.push('Browser path entry opens an empty directory-named workspace directly; renaming persists after reload and reopening preserves the custom name, directory and identity.');
+  await page.goto(location('flow')); await ready();
 
   await page.locator('#tab-requirements').click();
   const draft = 'Unsaved QA draft — 用户正文 is preserved verbatim.';
